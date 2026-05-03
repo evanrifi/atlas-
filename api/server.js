@@ -60,12 +60,15 @@ module.exports = (client) => {
     let automod = true;
     let antiLink = false;
 
+    const { loadSecurityConfig } = require('../security');
+    const secConfig = loadSecurityConfig(targetGuildId);
+    antiNuke = secConfig.antiNuke;
+    antiLink = secConfig.antiLink;
+
     if (mongoose.connection.readyState === 1) {
        const config = await GuildConfig.findOne({ guildId: targetGuildId });
        if (config) {
-          antiNuke = config.modules.antiNuke;
           automod = config.modules.automod;
-          antiLink = config.modules.antiLink;
        }
     }
 
@@ -103,6 +106,12 @@ module.exports = (client) => {
 
     const { antiNuke, automod, antiLink } = req.body;
     
+    const { loadSecurityConfig, saveSecurityConfig } = require('../security');
+    const secConfig = loadSecurityConfig(req.params.guildId);
+    secConfig.antiNuke = antiNuke;
+    secConfig.antiLink = antiLink;
+    saveSecurityConfig(req.params.guildId, secConfig);
+
     if (mongoose.connection.readyState === 1) {
        await GuildConfig.findOneAndUpdate(
          { guildId: req.params.guildId },

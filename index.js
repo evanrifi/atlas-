@@ -850,19 +850,130 @@ client.on('interactionCreate', async (interaction) => {
        const node = client.shoukaku.options.nodeResolver(client.shoukaku.nodes);
        if (!node) return interaction.reply({ content: '❌ Lavalink node is offline.', ephemeral: true });
 
-       const result = await node.rest.resolve(query);
-       if (!result || !result.data) return interaction.reply({ content: '❌ Track not found.', ephemeral: true });
+       await interaction.deferReply();
+       
+       let search = query;
+       if (!search.startsWith('http')) search = `ytsearch:${query}`;
 
-       const player = await client.shoukaku.joinVoiceChannel({
-           guildId: interaction.guild.id,
-           channelId: voiceChannel.id,
-           shardId: 0
-       });
+       const result = await node.rest.resolve(search);
+       if (!result || !result.data) {
+           return interaction.editReply({ content: '❌ Track not found.' });
+       }
 
-       const track = result.data.tracks ? result.data.tracks[0] : result.data;
-       await player.playTrack({ track: track.encoded });
+       let tracks = [];
+       if (result.data.tracks && result.data.tracks.length > 0) {
+           tracks = result.data.tracks;
+       } else if (result.data.info) {
+           tracks = [result.data]; // Single track
+       } else if (result.tracks && result.tracks.length > 0) {
+           tracks = result.tracks; // older lavalink format
+       }
 
-       return interaction.reply(`🎶 Now playing: **${track.info.title}**`);
+       if (tracks.length === 0) return interaction.editReply({ content: '❌ Track not found.' });
+       
+       const track = tracks[0];
+       const trackEncoded = track.encoded || track.track; // support both structures
+
+       let player = client.shoukaku.players.get(interaction.guild.id);
+       let queue = musicQueues.get(interaction.guild.id);
+
+       if (!player) {
+           try {
+               player = await client.shoukaku.joinVoiceChannel({
+                   guildId: interaction.guild.id,
+                   channelId: voiceChannel.id,
+                   shardId: 0
+               });
+           } catch (e) {
+               return interaction.editReply({ content: '❌ Could not join your voice channel.' });
+           }
+           
+           queue = { tracks: [], current: null, channel: interaction.channel };
+           musicQueues.set(interaction.guild.id, queue);
+
+           player.on('end', async (data) => {
+               if (data.reason === 'REPLACED') return;
+               const q = musicQueues.get(interaction.guild.id);
+               if (q && q.tracks.length > 0) {
+                   q.current = q.tracks.shift();
+                   const enc = q.current.encoded || q.current.track;
+                   await player.playTrack({ track: enc });
+                   if (q.channel) q.channel.send(`🎶 Now playing: **${q.current.info.title}**`);
+               } else {
+                   musicQueues.delete(interaction.guild.id);
+                   await client.shoukaku.leaveVoiceChannel(interaction.guild.id);
+               }
+           });
+           
+           player.on('closed', () => {
+               musicQueues.delete(interaction.guild.id);
+               client.shoukaku.leaveVoiceChannel(interaction.guild.id).catch(()=>{});
+           });
+       }
+
+       if (!queue) {
+           queue = { tracks: [], current: null, channel: interaction.channel };
+           musicQueues.set(interaction.guild.id, queue);
+       }
+
+       if (!queue.current) {
+           queue.current = track;
+           await player.playTrack({ track: trackEncoded });
+           return interaction.editReply(`🎶 Now playing: **${track.info.title}**`);
+       } else {
+           queue.tracks.push(track);
+           return interaction.editReply(`📝 Added to queue: **${track.info.title}**`);
+       }
+    }
+
+    if (commandName === 'skip') {
+       const player = client.shoukaku?.players.get(interaction.guild.id);
+       if (!player) return interaction.reply({ content: '❌ Nothing is playing.', ephemeral: true });
+       await player.stopTrack();
+       return interaction.reply('⏭️ Skipped.');
+    }
+
+    if (commandName === 'pause') {
+       const player = client.shoukaku?.players.get(interaction.guild.id);
+       if (!player) return interaction.reply({ content: '❌ Nothing is playing.', ephemeral: true });
+       await player.setPaused(true);
+       return interaction.reply('⏸️ Paused.');
+    }
+
+    if (commandName === 'resume') {
+       const player = client.shoukaku?.players.get(interaction.guild.id);
+       if (!player) return interaction.reply({ content: '❌ Nothing is playing.', ephemeral: true });
+       await player.setPaused(false);
+       return interaction.reply('▶️ Resumed.');
+    }
+
+    if (commandName === 'queue') {
+       const queue = musicQueues.get(interaction.guild.id);
+       if (!queue || (!queue.current && queue.tracks.length === 0)) {
+           return interaction.reply({ content: '❌ Queue is empty.', ephemeral: true });
+       }
+       
+       let qStr = `**Now Playing:** ${queue.current.info.title}\n\n**Up Next:**\n`;
+       if (queue.tracks.length === 0) {
+           qStr += '*No more tracks in queue.*';
+       } else {
+           qStr += queue.tracks.slice(0, 10).map((t, i) => `**${i+1}.** ${t.info.title}`).join('\n');
+           if (queue.tracks.length > 10) qStr += `\n*...and ${queue.tracks.length - 10} more.*`;
+       }
+       
+       const embed = new EmbedBuilder().setColor(CYAN).setTitle('🎶 Music Queue').setDescription(qStr);
+       return interaction.reply({ embeds: [embed] });
+    }
+
+    if (commandName === 'nowplaying') {
+       const queue = musicQueues.get(interaction.guild.id);
+       if (!queue || !queue.current) return interaction.reply({ content: '❌ Nothing is playing.', ephemeral: true });
+       
+       const embed = new EmbedBuilder()
+           .setColor(CYAN)
+           .setTitle('🎶 Now Playing')
+           .setDescription(`**[${queue.current.info.title}](${queue.current.info.uri || '#'})**\nAuthor: ${queue.current.info.author}`);
+       return interaction.reply({ embeds: [embed] });
     }
 
     if (commandName === 'stop') {
@@ -870,9 +981,62 @@ client.on('interactionCreate', async (interaction) => {
        const player = client.shoukaku.players.get(interaction.guild.id);
        if (!player) return interaction.reply({ content: '❌ Nothing is playing.', ephemeral: true });
        
+       musicQueues.delete(interaction.guild.id);
        await client.shoukaku.leaveVoiceChannel(interaction.guild.id);
        return interaction.reply('🛑 Audio stopped and disconnected.');
     }
+
+    if (commandName === 'alt-check') {
+       if (mongoose.connection.readyState !== 1) return interaction.reply({ content: '❌ Database offline.', ephemeral: true });
+       const target = interaction.options.getUser('user');
+       const record = await AltTracker.findOne({ userId: target.id });
+       
+       if (!record) {
+           return interaction.reply({ content: `✅ **${target.tag}** has no tracked data or is clean.`, ephemeral: true });
+       }
+       
+       // Check if they share IP or fingerprint with any banned user
+       const relatedAlts = await AltTracker.find({ 
+           $or: [ { ipHash: record.ipHash }, { fingerprint: record.fingerprint } ],
+           userId: { $ne: target.id }
+       });
+       
+       const embed = new EmbedBuilder()
+           .setColor(record.banned ? RED : CYAN)
+           .setTitle(`Alt Tracker: ${target.tag}`)
+           .addFields(
+               { name: 'Blacklisted?', value: record.banned ? '🔴 YES' : '🟢 NO', inline: true },
+               { name: 'Fingerprint Match', value: `\`${record.fingerprint.substring(0, 8)}...\``, inline: true }
+           );
+           
+       if (relatedAlts.length > 0) {
+           embed.addFields({ name: 'Associated Accounts', value: relatedAlts.map(a => `<@${a.userId}> (Banned: ${a.banned})`).join('\n') });
+       } else {
+           embed.addFields({ name: 'Associated Accounts', value: 'None found.' });
+       }
+       
+       return interaction.reply({ embeds: [embed] });
+    }
+
+    if (commandName === 'alt-blacklist') {
+       if (mongoose.connection.readyState !== 1) return interaction.reply({ content: '❌ Database offline.', ephemeral: true });
+       const target = interaction.options.getUser('user');
+       
+       const record = await AltTracker.findOneAndUpdate(
+           { userId: target.id },
+           { banned: true },
+           { upsert: true, new: true }
+       );
+       
+       // Ban the user in the server too
+       const member = await interaction.guild.members.fetch(target.id).catch(()=>null);
+       if (member && member.bannable) {
+           await member.ban({ reason: 'Alt Tracker: Blacklisted by Staff' });
+       }
+       
+       return interaction.reply({ content: `🚫 **${target.tag}**'s network signature has been blacklisted. Any future alts using this network/browser will be blocked from verification.` });
+    }
+
 
     if (commandName === 'economy') {
       const sub = interaction.options.getSubcommand();
