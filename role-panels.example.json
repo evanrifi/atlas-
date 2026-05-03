@@ -1,0 +1,24 @@
+{
+  "guilds": {
+    "default": {
+      "panels": [
+        {
+          "id": "example",
+          "title": "Example panel",
+          "description": "Replace role IDs below, add your server under guilds, then save as role-panels.json",
+          "placeholder": "Pick a role",
+          "color": 7171433,
+          "exclusive": true,
+          "bodyLines": [
+            "`▫` **Role A**",
+            "`▫` **Role B**"
+          ],
+          "options": [
+            { "label": "Role A", "emoji": "▫", "roleId": "000000000000000001" },
+            { "label": "Role B", "emoji": "▫", "roleId": "000000000000000002" }
+          ]
+        }
+      ]
+    }
+  }
+}

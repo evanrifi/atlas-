@@ -1,4 +1,4 @@
-# ✦ Atlas Unit — Temp Voice Bot
+# ✦ ATLAS ULTIMATE — Temp Voice Bot
 
 A clean, powerful temporary voice channel bot for Discord.
 
@@ -68,7 +68,7 @@ npm start
 
 1. Create one or more **join-to-create** voice channels (any name you like).
 2. Copy each channel ID into `.env` (`JOIN_TO_CREATE_ID` is required; optional `JTC_*` IDs add themed room types).
-3. When a user joins a hub, Atlas Unit creates a **temporary** voice channel, moves them in, and posts a **control panel** with buttons.
+3. When a user joins a hub, ATLAS ULTIMATE creates a **temporary** voice channel, moves them in, and posts a **control panel** with buttons.
 4. When the last user leaves, the temp channel is deleted.
 
 **Note:** Temp-channel ownership is kept in memory while the bot runs. After a **restart**, existing temp channels may still exist in Discord but won’t be manageable until recreated (or you extend the bot to persist state).

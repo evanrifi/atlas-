@@ -65,7 +65,7 @@ function levelUpEmbed(member, newLevel, needed, client) {
   return new EmbedBuilder()
     .setColor(isMilestone ? 0xf0c13e : 0x1dc9d8)
     .setAuthor({
-      name: '◈  ATLAS UNIT  ·  Level Up',
+      name: '◈  ATLAS ULTIMATE  ·  Level Up',
       iconURL: client.user.displayAvatarURL(),
     })
     .setTitle(isMilestone ? `⭐ ${member.displayName} reached Level ${newLevel}!` : `✦ ${member.displayName} leveled up!`)
@@ -78,7 +78,7 @@ function levelUpEmbed(member, newLevel, needed, client) {
       { name: 'Level',    value: `**${newLevel}**`,          inline: true },
       { name: 'Next level', value: `**${needed} XP** needed`, inline: true },
     )
-    .setFooter({ text: 'Atlas Unit · XP System' })
+    .setFooter({ text: 'ATLAS ULTIMATE · XP System' })
     .setTimestamp();
 }
 
@@ -91,18 +91,18 @@ function rankEmbed(member, { level, currentXP, needed }, totalXP, rank, client) 
   return new EmbedBuilder()
     .setColor(0x1dc9d8)
     .setAuthor({
-      name: '◈  ATLAS UNIT  ·  XP Rank',
+      name: '◈  ATLAS ULTIMATE  ·  XP Rank',
       iconURL: client.user.displayAvatarURL(),
     })
     .setTitle(`${member.displayName}'s Rank`)
-    .setThumbnail(member.displayAvatarURL({ dynamic: true }))
+    .setThumbnail(member.displayAvatarURL({ size: 256 }))
     .addFields(
       { name: 'Rank',     value: `**#${rank}**`,              inline: true },
       { name: 'Level',    value: `**${level}**`,              inline: true },
       { name: 'Total XP', value: `**${totalXP} XP**`,         inline: true },
       { name: `Progress  ${currentXP}/${needed} XP`, value: `\`${bar}\`` },
     )
-    .setFooter({ text: 'Atlas Unit · XP System' })
+    .setFooter({ text: 'ATLAS ULTIMATE · XP System' })
     .setTimestamp();
 }
 
@@ -116,12 +116,12 @@ function leaderboardEmbed(entries, client) {
   return new EmbedBuilder()
     .setColor(0x1dc9d8)
     .setAuthor({
-      name: '◈  ATLAS UNIT  ·  Leaderboard',
+      name: '◈  ATLAS ULTIMATE  ·  Leaderboard',
       iconURL: client.user.displayAvatarURL(),
     })
     .setTitle('Top Members')
     .setDescription(lines || 'No data yet.')
-    .setFooter({ text: 'Atlas Unit · XP System' })
+    .setFooter({ text: 'ATLAS ULTIMATE · XP System' })
     .setTimestamp();
 }
 

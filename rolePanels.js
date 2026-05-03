@@ -7,8 +7,7 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 
-const DATA_PATH = path.join(__dirname, 'data', 'role-panels.json');
-const EXAMPLE_PATH = path.join(__dirname, 'data', 'role-panels.example.json');
+const DATA_PATH = path.join(__dirname, 'role-panels.json');
 
 let cache = null;
 
@@ -44,32 +43,38 @@ function getPanel(guildId, panelId) {
   return getPanelsForGuild(guildId).find((p) => p.id === panelId) || null;
 }
 
-const CYAN = 0x00e5ff;
+/** Fallback accent when a panel omits `color` (deep violet) */
+const DEFAULT_PANEL_COLOR = 0x6d28d9;
 
 function buildPanelPayload(panel, guild, client) {
-  const color = typeof panel.color === 'number' ? panel.color : CYAN;
+  const color = typeof panel.color === 'number' ? panel.color : DEFAULT_PANEL_COLOR;
   const lines =
     panel.bodyLines && panel.bodyLines.length
       ? panel.bodyLines
       : panel.options.map((o) => `\`${o.emoji || '▫'}\` **${o.label}**`);
 
+  const quoted = lines.map((line) => {
+    const t = line.replace(/^\s*>\s?/, '');
+    return `> ${t}`;
+  });
+
   const parts = [];
-  if (panel.description) parts.push(panel.description);
-  if (lines.length) {
+  if (panel.description) parts.push(`**${panel.description}**`);
+  if (quoted.length) {
     if (parts.length) parts.push('');
-    parts.push(...lines);
+    parts.push(quoted.join('\n'));
   }
-  const desc = parts.join('\n') || '_Choose a role below._';
+  const desc = (parts.length ? parts.join('\n') : '> _Pick a role from the menu below._').slice(0, 4096);
+
+  const icon = client.user.displayAvatarURL({ size: 256 });
 
   const embed = new EmbedBuilder()
     .setColor(color)
-    .setAuthor({
-      name: '◈  ATLAS UNIT  ·  Roles',
-      iconURL: client.user.displayAvatarURL(),
-    })
+    .setAuthor({ name: 'ATLAS ULTIMATE', iconURL: icon })
     .setTitle(panel.title || 'Roles')
-    .setDescription(desc.slice(0, 4096))
-    .setFooter({ text: 'Select a role below · Atlas Unit' });
+    .setDescription(desc)
+    .setFooter({ text: 'ATLAS ULTIMATE' })
+    .setTimestamp();
 
   const menu = new StringSelectMenuBuilder()
     .setCustomId(`au_rr:${panel.id}`)
@@ -101,7 +106,7 @@ async function postRolePanels(channel, guild, client) {
   const panels = getPanelsForGuild(guild.id);
   if (!panels.length) {
     throw new Error(
-      'No panels for this server. Copy data/role-panels.example.json to data/role-panels.json and set your role IDs.'
+      'No panels for this server. Copy role-panels.example.json to role-panels.json and set your role IDs.'
     );
   }
   let n = 0;

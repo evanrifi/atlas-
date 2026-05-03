@@ -34,7 +34,7 @@ function buildBoostEmbed(member, guild, client) {
     '',
     `**${guild.name}** now holds **${guild.premiumSubscriptionCount}** boost${guild.premiumSubscriptionCount === 1 ? '' : 's'} · **Tier ${guild.premiumTier}**`,
     '',
-    '_Atlas Unit · Elite support · Thank you_',
+    '_ATLAS ULTIMATE · Elite support · Thank you_',
   ].join('\n');
 
   const body = process.env.BOOST_MESSAGE
@@ -44,7 +44,7 @@ function buildBoostEmbed(member, guild, client) {
   return new EmbedBuilder()
     .setColor(color)
     .setAuthor({
-      name: '◈  ATLAS UNIT  ·  NITRO BOOST',
+      name: '◈  ATLAS ULTIMATE  ·  NITRO BOOST',
       iconURL: logo && logo.startsWith('http') ? logo : client.user.displayAvatarURL(),
     })
     .setTitle(`✨  ${member.displayName}  ·  New boost`)
@@ -55,7 +55,7 @@ function buildBoostEmbed(member, guild, client) {
       { name: 'Server tier', value: `**${guild.premiumTier}** / 3`, inline: true },
       { name: 'Total boosts', value: `**${guild.premiumSubscriptionCount}**`, inline: true }
     )
-    .setFooter({ text: 'Atlas Unit · Premium' })
+    .setFooter({ text: 'ATLAS ULTIMATE · Premium' })
     .setTimestamp();
 }
 
@@ -67,7 +67,7 @@ function serverInfoEmbed(guild, client) {
 
   const embed = new EmbedBuilder()
     .setColor(ACCENT)
-    .setAuthor({ name: '◈  ATLAS UNIT  ·  Server intel', iconURL: client.user.displayAvatarURL() })
+    .setAuthor({ name: '◈  ATLAS ULTIMATE  ·  Server intel', iconURL: client.user.displayAvatarURL() })
     .setTitle(guild.name);
   const icon = guild.iconURL({ size: 256 });
   if (icon) embed.setThumbnail(icon);
@@ -85,7 +85,7 @@ function serverInfoEmbed(guild, client) {
       { name: 'Roles', value: `**${guild.roles.cache.size}**`, inline: true },
       { name: 'Created', value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:R>`, inline: true }
     )
-    .setFooter({ text: `ID ${guild.id} · Atlas Unit` })
+    .setFooter({ text: `ID ${guild.id} · ATLAS ULTIMATE` })
     .setTimestamp();
 }
 
@@ -107,7 +107,7 @@ function userInfoEmbed(member, client) {
 
   return new EmbedBuilder()
     .setColor(ACCENT)
-    .setAuthor({ name: '◈  ATLAS UNIT  ·  Profile', iconURL: client.user.displayAvatarURL() })
+    .setAuthor({ name: '◈  ATLAS ULTIMATE  ·  Profile', iconURL: client.user.displayAvatarURL() })
     .setTitle(u.tag)
     .setThumbnail(u.displayAvatarURL({ size: 256 }))
     .addFields(
@@ -120,7 +120,7 @@ function userInfoEmbed(member, client) {
       { name: `Roles (${member.roles.cache.size - 1})`, value: roles.length > 1024 ? roles.slice(0, 1020) + '…' : roles },
       { name: 'Badges', value: badges }
     )
-    .setFooter({ text: 'Atlas Unit · Premium' })
+    .setFooter({ text: 'ATLAS ULTIMATE · Premium' })
     .setTimestamp();
 }
 

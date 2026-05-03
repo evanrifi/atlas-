@@ -18,11 +18,11 @@ function getWarns(db, guildId, userId) {
   return db[guildId][userId];
 }
 
-// ─── WORD FILTER ─────────────────────────────────────────────────────
+// ─── WORD FILTER (REGEX SUPPORTED) ───────────────────────────────────
 // Add/remove words here or manage via !addword / !removeword commands
 const DEFAULT_BANNED_WORDS = [
-  'nigger','nigga','faggot','retard','kys','kill yourself',
-  'discord.gg/','discord.com/invite/', // anti-invite spam
+  'nigg[a|er]', 'faggot', 'retard', 'k[i1]ll\\s*y[o0]urself',
+  'free\\s*nitro', 'discord\\.gift\\/'
 ];
 
 function loadBannedWords(guildId) {
@@ -62,14 +62,14 @@ const AMBER  = 0xf0c13e;
 function warnEmbed(member, reason, warnCount, client) {
   return new EmbedBuilder()
     .setColor(AMBER)
-    .setAuthor({ name: '◈  ATLAS UNIT  ·  Auto Mod', iconURL: client.user.displayAvatarURL() })
+    .setAuthor({ name: '◈  ATLAS ULTIMATE  ·  Auto Mod', iconURL: client.user.displayAvatarURL() })
     .setTitle(`⚠️  Warning — ${member.displayName}`)
     .setDescription(`You have been warned in **${member.guild.name}**.`)
     .addFields(
       { name: 'Reason',    value: reason,          inline: true },
       { name: 'Warnings',  value: `**${warnCount}/3**`, inline: true },
     )
-    .setFooter({ text: warnCount >= 3 ? 'Final warning — next action: kick' : 'Atlas Unit · Auto Moderation' })
+    .setFooter({ text: warnCount >= 3 ? 'Final warning — next action: mute' : 'ATLAS ULTIMATE · Auto Moderation' })
     .setTimestamp();
 }
 
@@ -77,23 +77,23 @@ function logEmbed(member, reason, warnCount, action, client) {
   const color = action === 'kick' ? RED : action === 'warn' ? AMBER : RED;
   return new EmbedBuilder()
     .setColor(color)
-    .setAuthor({ name: '◈  ATLAS UNIT  ·  Mod Log', iconURL: client.user.displayAvatarURL() })
+    .setAuthor({ name: '◈  ATLAS ULTIMATE  ·  Mod Log', iconURL: client.user.displayAvatarURL() })
     .setTitle(action === 'kick' ? '🔨  Member Kicked' : '⚠️  Member Warned')
-    .setThumbnail(member.displayAvatarURL({ dynamic: true }))
+    .setThumbnail(member.displayAvatarURL({ size: 256 }))
     .addFields(
       { name: 'Member',   value: `${member} (${member.id})`, inline: false },
       { name: 'Reason',   value: reason,                     inline: true  },
       { name: 'Warnings', value: `${warnCount}/3`,           inline: true  },
       { name: 'Action',   value: action.toUpperCase(),       inline: true  },
     )
-    .setFooter({ text: 'Atlas Unit · Auto Moderation' })
+    .setFooter({ text: 'ATLAS ULTIMATE · Auto Moderation' })
     .setTimestamp();
 }
 
 function manualWarnEmbed(target, reason, warnCount, mod, client) {
   return new EmbedBuilder()
     .setColor(AMBER)
-    .setAuthor({ name: '◈  ATLAS UNIT  ·  Manual Warn', iconURL: client.user.displayAvatarURL() })
+    .setAuthor({ name: '◈  ATLAS ULTIMATE  ·  Manual Warn', iconURL: client.user.displayAvatarURL() })
     .setTitle(`⚠️  Warning Issued`)
     .addFields(
       { name: 'Member',       value: `${target} (${target.id})`, inline: false },
@@ -101,17 +101,17 @@ function manualWarnEmbed(target, reason, warnCount, mod, client) {
       { name: 'Warnings',     value: `${warnCount}/3`,            inline: true  },
       { name: 'Warned by',    value: `${mod}`,                    inline: true  },
     )
-    .setFooter({ text: 'Atlas Unit · Auto Moderation' })
+    .setFooter({ text: 'ATLAS ULTIMATE · Auto Moderation' })
     .setTimestamp();
 }
 
 function clearWarnsEmbed(target, mod, client) {
   return new EmbedBuilder()
     .setColor(CYAN)
-    .setAuthor({ name: '◈  ATLAS UNIT  ·  Warnings Cleared', iconURL: client.user.displayAvatarURL() })
+    .setAuthor({ name: '◈  ATLAS ULTIMATE  ·  Warnings Cleared', iconURL: client.user.displayAvatarURL() })
     .setTitle('✦  Warnings Cleared')
     .setDescription(`All warnings for **${target.displayName}** have been cleared by ${mod}.`)
-    .setFooter({ text: 'Atlas Unit · Auto Moderation' })
+    .setFooter({ text: 'ATLAS ULTIMATE · Auto Moderation' })
     .setTimestamp();
 }
 
@@ -121,10 +121,10 @@ function warnsListEmbed(target, warns, client) {
     : warns.map((w, i) => `**${i+1}.** ${w.reason} — <t:${Math.floor(w.time/1000)}:R>`).join('\n');
   return new EmbedBuilder()
     .setColor(AMBER)
-    .setAuthor({ name: '◈  ATLAS UNIT  ·  Warn History', iconURL: client.user.displayAvatarURL() })
+    .setAuthor({ name: '◈  ATLAS ULTIMATE  ·  Warn History', iconURL: client.user.displayAvatarURL() })
     .setTitle(`⚠️  Warnings for ${target.displayName}`)
     .setDescription(lines)
-    .setFooter({ text: `Total: ${warns.length}/3 · Atlas Unit` })
+    .setFooter({ text: `Total: ${warns.length}/3 · ATLAS ULTIMATE` })
     .setTimestamp();
 }
 

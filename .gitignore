@@ -8,9 +8,6 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Keep project data files versioned
-!data/
-!data/role-panels.json
 xp-data.json
 warn-data.json
 banned-words-*.json

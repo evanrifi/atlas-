@@ -2,7 +2,7 @@ const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 
-/** Electric cyan + gunmetal palette (matches ATLAS UNIT logo) */
+/** Electric cyan + gunmetal palette (matches ATLAS ULTIMATE branding) */
 const DEFAULT_ACCENT = 0x00e5ff;
 
 const LOCAL_LOGO = path.join(__dirname, 'assets', 'welcome-logo.png');
@@ -55,7 +55,7 @@ function buildWelcomeEmbed(member, guild, client) {
     '',
     'You are member **{memberCount}**.',
     '',
-    '_Atlas Unit · precision · community_',
+    '_ATLAS ULTIMATE · precision · community_',
   ].join('\n');
 
   const body = formatWelcomeText(process.env.WELCOME_BODY || defaultBody, member, guild);
@@ -66,7 +66,7 @@ function buildWelcomeEmbed(member, guild, client) {
 
   const embed = new EmbedBuilder()
     .setColor(accent)
-    .setAuthor({ name: '◈  ATLAS UNIT  ·  WELCOME', iconURL: authorIcon })
+    .setAuthor({ name: '◈  ATLAS ULTIMATE  ·  WELCOME', iconURL: authorIcon })
     .setTitle(title)
     .setDescription(body)
     .setThumbnail(member.displayAvatarURL({ size: 256 }))
@@ -87,7 +87,7 @@ function buildWelcomeEmbed(member, guild, client) {
         inline: true,
       }
     )
-    .setFooter({ text: 'Atlas Unit · Verified entry' })
+    .setFooter({ text: 'ATLAS ULTIMATE · Verified entry' })
     .setTimestamp();
 
   if (bannerUrl && bannerUrl.startsWith('http')) embed.setImage(bannerUrl);
@@ -106,7 +106,7 @@ function buildWelcomePayload(member, guild, client) {
   if (useLocalLogo) {
     files.push(new AttachmentBuilder(LOCAL_LOGO, { name: 'welcome-logo.png' }));
     embed.setAuthor({
-      name: '◈  ATLAS UNIT  ·  WELCOME',
+      name: '◈  ATLAS ULTIMATE  ·  WELCOME',
       iconURL: 'attachment://welcome-logo.png',
     });
   }

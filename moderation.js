@@ -23,7 +23,7 @@ function modLogEmbed({ action, moderator, targetUser, targetTag, reason, extra }
   const icon = moderator.client.user.displayAvatarURL();
   const embed = new EmbedBuilder()
     .setColor(CYAN)
-    .setAuthor({ name: `◈ Atlas Unit · ${action}`, iconURL: icon })
+    .setAuthor({ name: `◈ ATLAS ULTIMATE · ${action}`, iconURL: icon })
     .addFields(
       { name: 'Moderator', value: `${moderator}`, inline: true },
       { name: 'Target', value: targetUser ? `${targetUser} (\`${targetUser.id}\`)` : `\`${targetTag || 'Unknown'}\``, inline: true },

@@ -1,8 +1,23 @@
 const {
   Client, GatewayIntentBits, PermissionFlagsBits, Events, ActivityType,
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
-  ModalBuilder, TextInputBuilder, TextInputStyle
+  ModalBuilder, TextInputBuilder, TextInputStyle, AuditLogEvent,
+  StringSelectMenuBuilder
 } = require('discord.js');
+const { Shoukaku, Connectors } = require('shoukaku');
+const mongoose = require('mongoose');
+const discordTranscripts = require('discord-html-transcripts');
+const Ticket = require('./models/Ticket');
+const SecretChannel = require('./models/SecretChannel');
+const Economy = require('./models/Economy');
+const PhishingCache = require('./models/PhishingCache');
+const axios = require('axios');
+
+if (process.env.MONGO_URI) {
+  mongoose.connect(process.env.MONGO_URI)
+    .then(() => console.log('✦ MongoDB Connected'))
+    .catch(err => console.error('MongoDB Connection Error:', err));
+}
 require('dotenv').config();
 
 const {
@@ -17,6 +32,11 @@ const {
   checkSpam, warnEmbed, logEmbed,
   manualWarnEmbed, clearWarnsEmbed, warnsListEmbed,
 } = require('./automod');
+
+const {
+  loadSecurityConfig, saveSecurityConfig,
+  checkAntiRaid, checkAntiNuke, checkSecurityText, securityStatusEmbed
+} = require('./security');
 
 const { buildWelcomePayload } = require('./welcome');
 const { hierarchyBlock, modLogEmbed, sendModLog, purgeMessages } = require('./moderation');
@@ -36,6 +56,7 @@ const client = new Client({
 });
 
 const tempChannels = new Map();
+const musicQueues  = new Map();
 const CYAN   = 0x1dc9d8;
 const RED    = 0xe05a5a;
 const SILVER = 0xa8c0cc;
@@ -65,20 +86,20 @@ function getChannelType(id) {
 }
 
 function successEmbed(title, desc) {
-  return new EmbedBuilder().setColor(CYAN).setTitle(`✦ ${title}`).setDescription(desc).setFooter({ text: 'Atlas Unit' });
+  return new EmbedBuilder().setColor(CYAN).setTitle(`✦ ${title}`).setDescription(desc).setFooter({ text: 'ATLAS ULTIMATE' });
 }
 function errorEmbed(title, desc) {
-  return new EmbedBuilder().setColor(RED).setTitle(`✦ ${title}`).setDescription(desc).setFooter({ text: 'Atlas Unit' });
+  return new EmbedBuilder().setColor(RED).setTitle(`✦ ${title}`).setDescription(desc).setFooter({ text: 'ATLAS ULTIMATE' });
 }
 function infoEmbed(title, desc) {
-  return new EmbedBuilder().setColor(SILVER).setTitle(`✦ ${title}`).setDescription(desc).setFooter({ text: 'Atlas Unit' });
+  return new EmbedBuilder().setColor(SILVER).setTitle(`✦ ${title}`).setDescription(desc).setFooter({ text: 'ATLAS ULTIMATE' });
 }
 
 function buildPanel(member, data) {
   const type = data.type || { emoji: '🔷', label: 'Voice Room' };
   const GIF  = process.env.BANNER_GIF_URL;
   const embed = new EmbedBuilder().setColor(CYAN)
-    .setAuthor({ name: `◈  ATLAS UNIT  ·  ${type.emoji} ${type.label}`, iconURL: client.user.displayAvatarURL() });
+    .setAuthor({ name: `◈  ATLAS ULTIMATE  ·  ${type.emoji} ${type.label}`, iconURL: client.user.displayAvatarURL() });
   if (GIF && GIF.startsWith('http')) {
     embed.setImage(GIF);
   } else {
@@ -133,21 +154,58 @@ async function issueWarn(member, reason, client, isAuto = true) {
     user.warns = [];
     user.count = 0;
     saveWarns(db);
-    try { await member.kick(`Atlas Unit AutoMod: 3 warnings — ${reason}`); } catch {}
+    try { 
+       await member.timeout(60 * 60 * 1000, `ATLAS ULTIMATE AutoMod: 3 warnings — ${reason}`); 
+       await member.send(`⚠️ You have been **muted for 1 hour** due to reaching 3 strikes.`);
+    } catch {}
   }
   return warnCount;
 }
 
 // ─── READY ───────────────────────────────────────────────────────────
-client.once(Events.ClientReady, () => {
-  console.log(`✦ Atlas Unit online as ${client.user.tag}`);
-  client.user.setActivity('new members', { type: ActivityType.Watching });
+client.once(Events.ClientReady, async () => {
+  console.log(`✦ ATLAS ULTIMATE online as ${client.user.tag}`);
+  client.user.setActivity('🎵 Atlas Unit', { type: ActivityType.Watching });
+
+  // ── SECRET CHAT DAEMON ──
+  setInterval(async () => {
+    if (mongoose.connection.readyState !== 1) return;
+    try {
+      const expired = await SecretChannel.find({ deleteAt: { $lt: new Date() } });
+      for (const doc of expired) {
+        const guild = client.guilds.cache.get(doc.guildId);
+        if (guild) {
+          const ch = guild.channels.cache.get(doc.channelId);
+          if (ch) await ch.delete('Secret channel expired (Daemon)').catch(()=>{});
+        }
+        await SecretChannel.deleteOne({ _id: doc._id }).catch(()=>{});
+      }
+    } catch (e) {}
+  }, 60000); // Check every minute
+  
+  if (process.env.LAVALINK_HOST) {
+     const Nodes = [{
+         name: 'AtlasNode',
+         url: `${process.env.LAVALINK_HOST}:${process.env.LAVALINK_PORT || '2333'}`,
+         auth: process.env.LAVALINK_PASSWORD || 'youshallnotpass'
+     }];
+     client.shoukaku = new Shoukaku(new Connectors.DiscordJS(client), Nodes);
+     client.shoukaku.on('error', (_, error) => console.error('Lavalink Error:', error));
+     client.shoukaku.on('ready', (name) => console.log(`✦ Lavalink Node ${name} is now connected.`));
+  }
 });
 
-// ─── WELCOME (Probot-style, branded) ─────────────────────────────────
+// ─── WELCOME & ANTI-RAID ───────────────────────────────────────────────
 client.on('guildMemberAdd', async (member) => {
   try {
     if (process.env.GUILD_ID && member.guild.id !== process.env.GUILD_ID) return;
+    
+    // Anti-Raid Check
+    const isRaid = await checkAntiRaid(member);
+    if (isRaid) return; // Stop processing if kicked by anti-raid
+
+    // Auto-role assignment is now handled by the Captcha verification panel
+
     const chId = process.env.WELCOME_CHANNEL_ID;
     if (!chId) return;
     const ch = member.guild.channels.cache.get(chId);
@@ -156,6 +214,62 @@ client.on('guildMemberAdd', async (member) => {
     await ch.send({ content: `${member.user}`, embeds, files: files.length ? files : undefined });
   } catch (err) {
     console.error('guildMemberAdd welcome:', err);
+  }
+});
+
+// ─── ANTI-NUKE ────────────────────────────────────────────────────────
+client.on('guildBanAdd', async (ban) => {
+  try {
+    if (process.env.GUILD_ID && ban.guild.id !== process.env.GUILD_ID) return;
+    await checkAntiNuke(ban.guild, 'bans', client);
+  } catch (err) {
+    console.error('guildBanAdd anti-nuke:', err);
+  }
+});
+
+client.on('channelDelete', async (channel) => {
+  try {
+    if (!channel.guild) return;
+    if (process.env.GUILD_ID && channel.guild.id !== process.env.GUILD_ID) return;
+    await checkAntiNuke(channel.guild, 'channels', client);
+  } catch (err) {
+    console.error('channelDelete anti-nuke:', err);
+  }
+});
+
+// ─── ANTI-GHOST PING & ROLE NUKE ──────────────────────────────────
+client.on('roleDelete', async (role) => {
+  try {
+    if (process.env.GUILD_ID && role.guild.id !== process.env.GUILD_ID) return;
+    await checkAntiNuke(role.guild, 'roles', client);
+  } catch (err) {
+    console.error('roleDelete anti-nuke:', err);
+  }
+});
+
+client.on('messageDelete', async (message) => {
+  try {
+    if (!message.guild || message.author?.bot) return;
+    const config = loadSecurityConfig(message.guild.id);
+    if (!config.antiGhostPing) return;
+    
+    if (message.mentions.users.size > 0 || message.mentions.roles.size > 0) {
+      if (Date.now() - message.createdTimestamp > 60 * 60 * 1000) return; // ignore old
+      
+      const logCh = message.guild.channels.cache.get(process.env.MOD_LOG_CHANNEL_ID);
+      if (logCh) {
+        const embed = new EmbedBuilder()
+          .setColor(0xf0c13e)
+          .setAuthor({ name: '◈ ATLAS ULTIMATE · Anti-Ghost Ping', iconURL: client.user.displayAvatarURL() })
+          .setDescription(`**${message.author.tag}** ghost pinged in ${message.channel}`)
+          .addFields({ name: 'Message Content', value: message.content || '*No content*' })
+          .setTimestamp();
+        await logCh.send({ embeds: [embed] });
+      }
+      await message.channel.send(`👻 ${message.author}, ghost pinging is forbidden!`).then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
+    }
+  } catch (err) {
+    console.error('messageDelete ghost ping:', err);
   }
 });
 
@@ -183,21 +297,131 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
   }
 });
 
+// ─── STAFF ACTION LOGGING ──────────────────────────────────────────
+async function logStaffAction(guild, actionName, changes) {
+  try {
+    const logCh = guild.channels.cache.get(process.env.MOD_LOG_CHANNEL_ID);
+    if (!logCh) return;
+    const embed = new EmbedBuilder()
+      .setColor(0x1dc9d8)
+      .setAuthor({ name: `◈ ATLAS ULTIMATE · Staff Log`, iconURL: guild.client.user.displayAvatarURL() })
+      .setTitle(actionName)
+      .setDescription(changes || '*No specific details available.*')
+      .setTimestamp();
+    await logCh.send({ embeds: [embed] });
+  } catch {}
+}
+
+client.on('channelUpdate', async (oldChannel, newChannel) => {
+  if (!oldChannel.guild) return;
+  setTimeout(async () => {
+    try {
+      const logs = await newChannel.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.ChannelUpdate });
+      const entry = logs.entries.first();
+      if (entry && entry.target.id === newChannel.id && Date.now() - entry.createdTimestamp < 10000) {
+        if (entry.executor.bot) return;
+        const changes = entry.changes.map(c => `**${c.key}**: \`${c.old}\` ➔ \`${c.new}\``).join('\n');
+        await logStaffAction(newChannel.guild, `🛠️ Channel Updated: #${newChannel.name}`, `**Executor**: ${entry.executor}\n${changes}`);
+      }
+    } catch {}
+  }, 2000);
+});
+
+client.on('roleUpdate', async (oldRole, newRole) => {
+  setTimeout(async () => {
+    try {
+      const logs = await newRole.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.RoleUpdate });
+      const entry = logs.entries.first();
+      if (entry && entry.target.id === newRole.id && Date.now() - entry.createdTimestamp < 10000) {
+        if (entry.executor.bot) return;
+        const changes = entry.changes.map(c => `**${c.key}**: \`${c.old}\` ➔ \`${c.new}\``).join('\n');
+        await logStaffAction(newRole.guild, `🛡️ Role Updated: @${newRole.name}`, `**Executor**: ${entry.executor}\n${changes}`);
+      }
+    } catch {}
+  }, 2000);
+});
+
+client.on('guildUpdate', async (oldGuild, newGuild) => {
+  setTimeout(async () => {
+    try {
+      const logs = await newGuild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.GuildUpdate });
+      const entry = logs.entries.first();
+      if (entry && Date.now() - entry.createdTimestamp < 10000) {
+        if (entry.executor.bot) return;
+        const changes = entry.changes.map(c => `**${c.key}**: \`${c.old}\` ➔ \`${c.new}\``).join('\n');
+        await logStaffAction(newGuild, `🏰 Guild Settings Updated`, `**Executor**: ${entry.executor}\n${changes}`);
+      }
+    } catch {}
+  }, 2000);
+});
+
+const verificationCache = new Map();
+const XP_COOLDOWN = 10 * 1000;
+
 // ─── MESSAGE — AUTOMOD ONLY (no prefix commands) ──────────────────────
-const XP_COOLDOWN = 60 * 1000;
 
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   if (!message.guild)     return;
+  if (!message.member)   return;
 
   const member  = message.member;
   const content = message.content.toLowerCase();
   const isStaff = member.permissions.has(PermissionFlagsBits.ManageMessages);
 
   if (!isStaff) {
+    // ── ADVANCED PHISHING PROTECTION ──
+    const urlMatch = message.content.match(/(https?:\/\/[^\s]+)/g);
+    if (urlMatch) {
+      let isPhishing = false;
+      for (const link of urlMatch) {
+        try {
+          const domain = new URL(link).hostname;
+          if (mongoose.connection.readyState === 1) {
+            let cached = await PhishingCache.findOne({ domain });
+            if (!cached && process.env.VT_API_KEY) {
+              const vtRes = await axios.get(`https://www.virustotal.com/api/v3/domains/${domain}`, {
+                headers: { 'x-apikey': process.env.VT_API_KEY }
+              }).catch(() => null);
+              
+              const stats = vtRes?.data?.data?.attributes?.last_analysis_stats;
+              const isBad = stats && (stats.malicious > 0 || stats.suspicious > 1);
+              cached = await PhishingCache.create({ domain, isMalicious: !!isBad });
+            }
+            if (cached && cached.isMalicious) {
+              isPhishing = true;
+              break;
+            }
+          }
+        } catch (e) {}
+      }
+
+      if (isPhishing) {
+        await message.delete().catch(() => {});
+        await issueWarn(member, 'Malicious phishing link detected', client);
+        await message.channel.send(`🚨 ${message.author}, malicious link blocked by ATLAS Security!`);
+        return;
+      }
+    }
+
+    const config = loadSecurityConfig(message.guild.id);
+    const secViolation = checkSecurityText(message, config);
+    if (secViolation) {
+      await message.delete().catch(() => {});
+      await issueWarn(member, `Security Violation: ${secViolation}`, client);
+      return;
+    }
+
     const banned = loadBannedWords(message.guild.id);
-    const hit    = banned.find(w => content.includes(w.toLowerCase()));
-    if (hit) { await message.delete().catch(() => {}); await issueWarn(member, 'Banned word detected', client); return; }
+    let hit = false;
+    for (const w of banned) {
+      try {
+        if (new RegExp(w, 'i').test(content)) { hit = true; break; }
+      } catch {
+        if (content.includes(w.toLowerCase())) { hit = true; break; }
+      }
+    }
+    if (hit) { await message.delete().catch(() => {}); await issueWarn(member, 'Banned word/link detected (Regex)', client); return; }
     if (checkSpam(message.author.id)) { await message.delete().catch(() => {}); await issueWarn(member, 'Spam detected', client); return; }
     if (message.mentions.users.size >= 5) { await message.delete().catch(() => {}); await issueWarn(member, `Mass mention (${message.mentions.users.size} pings)`, client); return; }
     if (/discord\.(gg|com\/invite)\/\S+/i.test(message.content)) { await message.delete().catch(() => {}); await issueWarn(member, 'Unauthorized invite link', client); return; }
@@ -213,10 +437,20 @@ client.on('messageCreate', async (message) => {
   user.xp += Math.floor(Math.random() * 11) + 5;
   const newStats = getLevelFromXP(user.xp);
   saveDB(db);
+  console.log(`[XP] ${message.author.tag} gained XP. Total: ${user.xp}`);
   if (newStats.level > oldLevel) {
     const lvlCh = message.guild.channels.cache.get(process.env.LEVEL_UP_CHANNEL_ID) || message.channel;
     await lvlCh.send({ content: `${message.author}`, embeds: [levelUpEmbed(message.member, newStats.level, newStats.needed, client)] });
     await assignRoles(message.member, newStats.level);
+  }
+
+  if (mongoose.connection.readyState === 1) {
+    const coinsEarned = Math.floor(Math.random() * 5) + 1;
+    await Economy.findOneAndUpdate(
+      { guildId: message.guild.id, userId: message.author.id },
+      { $inc: { balance: coinsEarned } },
+      { upsert: true }
+    ).catch(()=>{});
   }
 });
 
@@ -264,22 +498,25 @@ client.on('interactionCreate', async (interaction) => {
     if (commandName === 'help') {
       const help = new EmbedBuilder()
         .setColor(CYAN)
-        .setTitle('✦ Atlas Unit — Command list')
+        .setTitle('✦ ATLAS ULTIMATE — Command list')
         .setDescription(
           [
             '**Everyone** (should appear in `/` for all members)',
             '`/help` · `/rank` · `/leaderboard` · `/serverinfo` · `/userinfo`',
             '',
             '**Mods** (Manage Messages)',
-            '`/warn` · `/warns` · `/clearwarns` · `/addword` · `/removeword` · `/wordlist`',
+            '`/warn` · `/warns` · `/clearwarns` · `/addword` · `/removeword` · `/wordlist` · `/clear`',
             '',
-            '**Administrators only** — Discord **hides** these in the `/` menu unless your account has **Administrator** (or owner)',
-            '`/roles` (post/reload panels) · `/kick` · `/ban` · `/unban` · `/mute` · `/unmute` · `/clear` · `/slowmode` · `/lock` · `/unlock` · `/nick` · `/welcome` · `/setxp` · `/resetxp`',
+            '**Moderators** (Specific Permissions)',
+            '`/kick` · `/ban` · `/unban` · `/mute` · `/unmute` · `/slowmode` · `/lock` · `/unlock` · `/nick`',
+            '',
+            '**Administrators only**',
+            '`/roles` (post/reload panels) · `/welcome` · `/setxp` · `/resetxp`',
             '',
             '**No commands at all?** Run `npm run deploy` on the PC where the bot project lives. `GUILD_ID` in `.env` must be **this** server\'s ID. Re-open Discord or press **Ctrl+R**.',
           ].join('\n')
         )
-        .setFooter({ text: 'Atlas Unit' });
+        .setFooter({ text: 'ATLAS ULTIMATE' });
       return interaction.reply({ embeds: [help], ephemeral: true });
     }
 
@@ -413,8 +650,8 @@ client.on('interactionCreate', async (interaction) => {
 
     // ── MODERATION (Probot-style) — Administrator only ─────────────
     if (commandName === 'kick') {
-      if (!isAdmin) {
-        return interaction.reply({ embeds: [errorEmbed('No Permission', 'Only **Administrators** can use this command.')], ephemeral: true });
+      if (!member.permissions.has(PermissionFlagsBits.KickMembers)) {
+        return interaction.reply({ embeds: [errorEmbed('No Permission', 'Only members with **Kick Members** permission can use this.')], ephemeral: true });
       }
       const target = interaction.options.getMember('user');
       const reason = interaction.options.getString('reason') || 'No reason provided';
@@ -427,8 +664,8 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (commandName === 'ban') {
-      if (!isAdmin) {
-        return interaction.reply({ embeds: [errorEmbed('No Permission', 'Only **Administrators** can use this command.')], ephemeral: true });
+      if (!member.permissions.has(PermissionFlagsBits.BanMembers)) {
+        return interaction.reply({ embeds: [errorEmbed('No Permission', 'Only members with **Ban Members** permission can use this.')], ephemeral: true });
       }
       const user = interaction.options.getUser('user', true);
       const reason = interaction.options.getString('reason') || 'No reason provided';
@@ -446,8 +683,8 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (commandName === 'unban') {
-      if (!isAdmin) {
-        return interaction.reply({ embeds: [errorEmbed('No Permission', 'Only **Administrators** can use this command.')], ephemeral: true });
+      if (!member.permissions.has(PermissionFlagsBits.BanMembers)) {
+        return interaction.reply({ embeds: [errorEmbed('No Permission', 'Only members with **Ban Members** permission can use this.')], ephemeral: true });
       }
       const rawId = interaction.options.getString('user_id').trim();
       const reason = interaction.options.getString('reason') || 'No reason provided';
@@ -462,8 +699,8 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (commandName === 'mute') {
-      if (!isAdmin) {
-        return interaction.reply({ embeds: [errorEmbed('No Permission', 'Only **Administrators** can use this command.')], ephemeral: true });
+      if (!member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+        return interaction.reply({ embeds: [errorEmbed('No Permission', 'Only members with **Timeout Members** permission can use this.')], ephemeral: true });
       }
       const target = interaction.options.getMember('user');
       const minutes = interaction.options.getInteger('minutes');
@@ -477,8 +714,8 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (commandName === 'unmute') {
-      if (!isAdmin) {
-        return interaction.reply({ embeds: [errorEmbed('No Permission', 'Only **Administrators** can use this command.')], ephemeral: true });
+      if (!member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+        return interaction.reply({ embeds: [errorEmbed('No Permission', 'Only members with **Timeout Members** permission can use this.')], ephemeral: true });
       }
       const target = interaction.options.getMember('user');
       const hb = hierarchyBlock(member, target);
@@ -489,8 +726,8 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (commandName === 'clear') {
-      if (!isAdmin) {
-        return interaction.reply({ embeds: [errorEmbed('No Permission', 'Only **Administrators** can use this command.')], ephemeral: true });
+      if (!member.permissions.has(PermissionFlagsBits.ManageMessages)) {
+        return interaction.reply({ embeds: [errorEmbed('No Permission', 'Only members with **Manage Messages** permission can use this.')], ephemeral: true });
       }
       const channel = interaction.channel;
       if (!channel?.isTextBased()) {
@@ -516,8 +753,8 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (commandName === 'slowmode') {
-      if (!isAdmin) {
-        return interaction.reply({ embeds: [errorEmbed('No Permission', 'Only **Administrators** can use this command.')], ephemeral: true });
+      if (!member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        return interaction.reply({ embeds: [errorEmbed('No Permission', 'Only members with **Manage Channels** permission can use this.')], ephemeral: true });
       }
       const seconds = interaction.options.getInteger('seconds');
       const ch = interaction.options.getChannel('channel') || interaction.channel;
@@ -530,8 +767,8 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (commandName === 'lock') {
-      if (!isAdmin) {
-        return interaction.reply({ embeds: [errorEmbed('No Permission', 'Only **Administrators** can use this command.')], ephemeral: true });
+      if (!member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        return interaction.reply({ embeds: [errorEmbed('No Permission', 'Only members with **Manage Channels** permission can use this.')], ephemeral: true });
       }
       const ch = interaction.options.getChannel('channel') || interaction.channel;
       if (!ch?.isTextBased()) {
@@ -543,8 +780,8 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (commandName === 'unlock') {
-      if (!isAdmin) {
-        return interaction.reply({ embeds: [errorEmbed('No Permission', 'Only **Administrators** can use this command.')], ephemeral: true });
+      if (!member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        return interaction.reply({ embeds: [errorEmbed('No Permission', 'Only members with **Manage Channels** permission can use this.')], ephemeral: true });
       }
       const ch = interaction.options.getChannel('channel') || interaction.channel;
       if (!ch?.isTextBased()) {
@@ -556,8 +793,8 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (commandName === 'nick') {
-      if (!isAdmin) {
-        return interaction.reply({ embeds: [errorEmbed('No Permission', 'Only **Administrators** can use this command.')], ephemeral: true });
+      if (!member.permissions.has(PermissionFlagsBits.ManageNicknames)) {
+        return interaction.reply({ embeds: [errorEmbed('No Permission', 'Only members with **Manage Nicknames** permission can use this.')], ephemeral: true });
       }
       const target = interaction.options.getMember('user');
       const nickRaw = interaction.options.getString('nickname');
@@ -567,6 +804,155 @@ client.on('interactionCreate', async (interaction) => {
       await target.setNickname(nick, 'Nick command');
       await sendModLog(guild, modLogEmbed({ action: 'Nickname', moderator: member, targetUser: target.user, extra: nick ? `→ **${nick}**` : 'Reset' }));
       return interaction.reply({ embeds: [successEmbed('Nickname updated', `**${target.user.tag}** ${nick ? `is now **${nick}**.` : 'nickname cleared.'}`)] });
+    }
+
+    if (commandName === 'secret-chat') {
+      const targetUser = interaction.options.getUser('user');
+      const minutes = interaction.options.getInteger('minutes');
+      
+      const channel = await interaction.guild.channels.create({
+        name: `secret-${Math.floor(Math.random() * 10000)}`,
+        type: 0,
+        permissionOverwrites: [
+          { id: interaction.guild.id, deny: ['ViewChannel'] },
+          { id: interaction.user.id, allow: ['ViewChannel', 'SendMessages'] },
+          { id: targetUser.id, allow: ['ViewChannel', 'SendMessages'] },
+          { id: client.user.id, allow: ['ViewChannel', 'SendMessages', 'ManageChannels'] }
+        ]
+      }).catch(err => {
+         console.error(err);
+         return null;
+      });
+
+      if (!channel) return interaction.reply({ content: '❌ Failed to create secret channel.', ephemeral: true });
+
+      const deleteAt = new Date(Date.now() + minutes * 60000);
+      
+      if (mongoose.connection.readyState === 1) {
+         await SecretChannel.create({ channelId: channel.id, guildId: interaction.guild.id, deleteAt }).catch(()=>{});
+      } else {
+         // Fallback if Mongo isn't connected
+         setTimeout(() => {
+            channel.delete('Secret channel expired (Timeout fallback)').catch(()=>{});
+         }, minutes * 60000);
+      }
+
+      await channel.send(`🕵️ **Secret Chat Created**\nWelcome ${interaction.user} and ${targetUser}.\nThis channel will self-destruct in **${minutes} minutes**.`);
+      return interaction.reply({ content: `✅ Secret channel created: ${channel} (Destructs in ${minutes}m)`, ephemeral: true });
+    }
+
+    if (commandName === 'play') {
+       const query = interaction.options.getString('query');
+       const voiceChannel = interaction.member.voice.channel;
+       if (!voiceChannel) return interaction.reply({ content: '❌ You need to be in a voice channel!', ephemeral: true });
+
+       if (!client.shoukaku) return interaction.reply({ content: '❌ Audio system is not configured.', ephemeral: true });
+       const node = client.shoukaku.options.nodeResolver(client.shoukaku.nodes);
+       if (!node) return interaction.reply({ content: '❌ Lavalink node is offline.', ephemeral: true });
+
+       const result = await node.rest.resolve(query);
+       if (!result || !result.data) return interaction.reply({ content: '❌ Track not found.', ephemeral: true });
+
+       const player = await client.shoukaku.joinVoiceChannel({
+           guildId: interaction.guild.id,
+           channelId: voiceChannel.id,
+           shardId: 0
+       });
+
+       const track = result.data.tracks ? result.data.tracks[0] : result.data;
+       await player.playTrack({ track: track.encoded });
+
+       return interaction.reply(`🎶 Now playing: **${track.info.title}**`);
+    }
+
+    if (commandName === 'stop') {
+       if (!client.shoukaku) return interaction.reply({ content: '❌ Audio system is not configured.', ephemeral: true });
+       const player = client.shoukaku.players.get(interaction.guild.id);
+       if (!player) return interaction.reply({ content: '❌ Nothing is playing.', ephemeral: true });
+       
+       await client.shoukaku.leaveVoiceChannel(interaction.guild.id);
+       return interaction.reply('🛑 Audio stopped and disconnected.');
+    }
+
+    if (commandName === 'economy') {
+      const sub = interaction.options.getSubcommand();
+      
+      if (mongoose.connection.readyState !== 1) {
+        return interaction.reply({ content: '❌ The Economy database is currently offline.', ephemeral: true });
+      }
+
+      if (sub === 'balance') {
+        const target = interaction.options.getUser('user') || interaction.user;
+        const record = await Economy.findOne({ guildId: interaction.guild.id, userId: target.id });
+        const bal = record ? record.balance : 0;
+        const embed = new EmbedBuilder()
+          .setColor(0xf1c40f)
+          .setAuthor({ name: `${target.username}'s Balance`, iconURL: target.displayAvatarURL() })
+          .setDescription(`💰 **${bal.toLocaleString()}** Atlas Coins`);
+        return interaction.reply({ embeds: [embed] });
+      }
+
+      const shopItems = [
+        { id: 'vip', name: 'VIP Role', price: 5000, desc: 'Grants the exclusive VIP role.', roleId: process.env.VIP_ROLE_ID || null },
+        { id: 'custom', name: 'Custom Name Color', price: 10000, desc: 'DM staff to claim your custom color role.', roleId: null }
+      ];
+
+      if (sub === 'shop') {
+        const embed = new EmbedBuilder()
+          .setColor(0x1dc9d8)
+          .setTitle('🛒 Server Shop')
+          .setDescription('Use `/economy buy <item>` to purchase an item.');
+        
+        shopItems.forEach(item => {
+           embed.addFields({ name: `${item.name} (${item.id})`, value: `💰 **${item.price.toLocaleString()}** Coins\n*${item.desc}*` });
+        });
+        
+        return interaction.reply({ embeds: [embed] });
+      }
+
+      if (sub === 'buy') {
+        const itemId = interaction.options.getString('item').toLowerCase();
+        const item = shopItems.find(i => i.id === itemId);
+        if (!item) return interaction.reply({ content: '❌ Item not found in the shop.', ephemeral: true });
+
+        const record = await Economy.findOne({ guildId: interaction.guild.id, userId: interaction.user.id });
+        if (!record || record.balance < item.price) {
+          return interaction.reply({ content: `❌ You don't have enough coins. You need **${item.price.toLocaleString()}** coins.`, ephemeral: true });
+        }
+
+        record.balance -= item.price;
+        record.inventory.push({ itemName: item.name, purchasedAt: new Date() });
+        await record.save();
+
+        if (item.roleId) {
+          const role = interaction.guild.roles.cache.get(item.roleId);
+          if (role) {
+            await interaction.member.roles.add(role).catch(()=>{});
+          }
+        }
+
+        const embed = new EmbedBuilder()
+          .setColor(0x2ecc71)
+          .setTitle('✅ Purchase Successful')
+          .setDescription(`You successfully bought **${item.name}** for 💰 ${item.price} coins!\nYour new balance is 💰 **${record.balance.toLocaleString()}**.`);
+        return interaction.reply({ embeds: [embed] });
+      }
+
+      if (sub === 'addmoney') {
+        if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+           return interaction.reply({ content: '❌ Admins only.', ephemeral: true });
+        }
+        const target = interaction.options.getUser('user');
+        const amount = interaction.options.getInteger('amount');
+        
+        const record = await Economy.findOneAndUpdate(
+          { guildId: interaction.guild.id, userId: target.id },
+          { $inc: { balance: amount } },
+          { upsert: true, new: true }
+        );
+        
+        return interaction.reply({ content: `✅ Added 💰 **${amount}** to ${target}. New balance: **${record.balance}**` });
+      }
     }
 
     // /welcome preview
@@ -591,7 +977,7 @@ client.on('interactionCreate', async (interaction) => {
       const sub = interaction.options.getSubcommand();
       if (sub === 'reload') {
         reloadRolePanels();
-        return interaction.reply({ embeds: [successEmbed('Reloaded', '**data/role-panels.json** has been reloaded.')], ephemeral: true });
+        return interaction.reply({ embeds: [successEmbed('Reloaded', '**role-panels.json** has been reloaded.')], ephemeral: true });
       }
       if (sub === 'post') {
         const channel = interaction.channel;
@@ -609,16 +995,176 @@ client.on('interactionCreate', async (interaction) => {
         }
       }
     }
+    // /security
+    if (commandName === 'security') {
+      if (!isAdmin) return interaction.reply({ embeds: [errorEmbed('No Permission', 'Only **Administrators** can use this.')], ephemeral: true });
+      
+      const sub = interaction.options.getSubcommand();
+      const config = loadSecurityConfig(guild.id);
+
+      if (sub === 'status') {
+        return interaction.reply({ embeds: [securityStatusEmbed(guild, config, client)] });
+      }
+
+      if (sub === 'toggle') {
+        const feature = interaction.options.getString('feature');
+        config[feature] = !config[feature];
+        saveSecurityConfig(guild.id, config);
+        
+        const state = config[feature] ? '✅ Enabled' : '❌ Disabled';
+        const featureNames = {
+          antiLink: 'Anti-Link',
+          antiRaid: 'Anti-Raid',
+          antiNuke: 'Anti-Nuke',
+          antiCaps: 'Anti-Caps',
+          antiGhostPing: 'Anti-Ghost Ping'
+        };
+
+        return interaction.reply({ embeds: [successEmbed('Security Updated', `**${featureNames[feature]}** is now ${state}.`)] });
+      }
+
+      if (sub === 'setquarantine') {
+        const role = interaction.options.getRole('role');
+        config.quarantineRoleId = role.id;
+        saveSecurityConfig(guild.id, config);
+        return interaction.reply({ embeds: [successEmbed('Security Updated', `Quarantine role set to ${role}.`)] });
+      }
+
+      if (sub === 'setup-ticket') {
+        const row = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId('ticket_menu')
+            .setPlaceholder('Select a department...')
+            .addOptions([
+              { label: 'General Support', description: 'Need help with something?', value: 'Support', emoji: '📝' },
+              { label: 'Billing / Purchases', description: 'Questions about shop items?', value: 'Billing', emoji: '💳' },
+              { label: 'Report User', description: 'Report a rule breaker.', value: 'Report', emoji: '🚨' }
+            ])
+        );
+        const embed = new EmbedBuilder()
+          .setColor(0x1dc9d8)
+          .setTitle('🎫 ATLAS Support System')
+          .setDescription('Need assistance? Select a department from the menu below to open a private ticket.')
+          .setFooter({ text: 'ATLAS ULTIMATE Support' });
+        
+        await interaction.channel.send({ embeds: [embed], components: [row] });
+        return interaction.reply({ content: 'Ticket panel deployed.', ephemeral: true });
+      }
+      
+      if (sub === 'setup-verification') {
+        const url = process.env.EXPRESS_PORT ? `http://localhost:${process.env.EXPRESS_PORT}/verify/login` : 'http://localhost:3000/verify/login';
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setLabel('Verify to Enter')
+            .setStyle(ButtonStyle.Link)
+            .setURL(url)
+            .setEmoji('🛡️')
+        );
+        const embed = new EmbedBuilder()
+          .setColor(0x1dc9d8)
+          .setTitle('🔒 Server Verification Required')
+          .setDescription('To gain full access to this server and receive the Member role, you must authorize your account.\n\nWe check if your account is **older than 30 days** and has **linked social accounts** to prevent bot raids.\n\nClick the button below to start.')
+          .setFooter({ text: 'ATLAS ULTIMATE Security' });
+        
+        await interaction.channel.send({ embeds: [embed], components: [row] });
+        return interaction.reply({ content: 'OAuth2 Verification panel deployed.', ephemeral: true });
+      }
+    }
+
   }
 
   // ── ROLE PANELS (select menu → roles) ───────────────────────────
-  if (interaction.isStringSelectMenu() && interaction.customId.startsWith('au_rr:')) {
-    await handleRolePanelSelect(interaction);
-    return;
+  if (interaction.isStringSelectMenu()) {
+    if (interaction.customId === 'ticket_menu') {
+      const dept = interaction.values[0];
+      const channelName = `ticket-${interaction.user.username}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+      const channel = await interaction.guild.channels.create({
+        name: channelName,
+        type: 0,
+        permissionOverwrites: [
+          { id: interaction.guild.id, deny: ['ViewChannel'] },
+          { id: interaction.user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
+          { id: client.user.id, allow: ['ViewChannel', 'SendMessages', 'ManageChannels'] }
+        ]
+      }).catch(() => null);
+
+      if (!channel) return interaction.reply({ content: '❌ Failed to create ticket channel.', ephemeral: true });
+
+      if (mongoose.connection.readyState === 1) {
+         await Ticket.create({ ticketId: channel.id, ownerId: interaction.user.id, channelId: channel.id, department: dept }).catch(()=>{});
+      }
+
+      const closeRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('close_ticket').setLabel('Close Ticket').setStyle(ButtonStyle.Danger).setEmoji('🔒')
+      );
+
+      const embed = new EmbedBuilder()
+        .setColor(0x1dc9d8)
+        .setTitle(`🎫 ${dept} Ticket`)
+        .setDescription(`Hello ${interaction.user}, a staff member will be with you shortly.\n\nTo close this ticket and generate a transcript, click the button below.`);
+      
+      await channel.send({ content: `${interaction.user}`, embeds: [embed], components: [closeRow] });
+      return interaction.reply({ content: `✅ Ticket created: ${channel}`, ephemeral: true });
+    }
+
+    if (interaction.customId.startsWith('au_rr:')) {
+      await handleRolePanelSelect(interaction);
+      return;
+    }
   }
 
   // ── BUTTONS ────────────────────────────────────────────────────
   if (interaction.isButton()) {
+    if (interaction.customId === 'close_ticket') {
+      await interaction.reply('🔒 Closing ticket and generating transcript... This may take a few seconds.');
+      const channel = interaction.channel;
+      try {
+        const attachment = await discordTranscripts.createTranscript(channel, {
+            filename: `${channel.name}-transcript.html`,
+            saveImages: true,
+            poweredBy: false
+        });
+        
+        const logChannelId = process.env.MOD_LOG_CHANNEL_ID;
+        if (logChannelId) {
+           const logChannel = interaction.guild.channels.cache.get(logChannelId);
+           if (logChannel) {
+             await logChannel.send({ content: `Transcript for **${channel.name}** (Closed by ${interaction.user.tag})`, files: [attachment] });
+           }
+        }
+        
+        try { await interaction.user.send({ content: `Your ticket **${channel.name}** has been closed. Here is your transcript:`, files: [attachment] }); } catch {}
+        
+        if (mongoose.connection.readyState === 1) {
+           await Ticket.findOneAndUpdate({ channelId: channel.id }, { status: 'closed' }).catch(()=>{});
+        }
+        
+        await channel.delete('Ticket closed').catch(()=>{});
+      } catch (err) {
+        console.error('Ticket close error:', err);
+        await interaction.editReply('❌ Failed to close ticket properly.');
+      }
+      return;
+    }
+
+    if (interaction.customId === 'btn_verify_start') {
+      const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+      verificationCache.set(interaction.user.id, code);
+      const modal = new ModalBuilder()
+        .setCustomId('modal_verify')
+        .setTitle('Security Captcha');
+      modal.addComponents(new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('captcha_input')
+          .setLabel(`Type this exact code: ${code}`)
+          .setStyle(TextInputStyle.Short)
+          .setMinLength(6).setMaxLength(6)
+          .setRequired(true)
+      ));
+      await interaction.showModal(modal);
+      return;
+    }
+
     const member  = interaction.member;
     const voiceCh = member.voice?.channel;
     const data    = voiceCh ? tempChannels.get(voiceCh.id) : null;
@@ -681,6 +1227,29 @@ client.on('interactionCreate', async (interaction) => {
 
   // ── MODALS ─────────────────────────────────────────────────────
   if (interaction.isModalSubmit()) {
+    if (interaction.customId === 'modal_verify') {
+      const expected = verificationCache.get(interaction.user.id);
+      const typed = interaction.fields.getTextInputValue('captcha_input').trim().toUpperCase();
+      
+      if (!expected || expected !== typed) {
+        return interaction.reply({ content: '❌ Incorrect captcha. Please click the button and try again.', ephemeral: true });
+      }
+      
+      verificationCache.delete(interaction.user.id);
+      const roleId = process.env.AUTO_ROLE_ID;
+      if (!roleId) {
+        return interaction.reply({ content: '⚠️ The server admin has not set up the AUTO_ROLE_ID in the configuration.', ephemeral: true });
+      }
+      const role = interaction.guild.roles.cache.get(roleId);
+      if (role) {
+        await interaction.member.roles.add(role).catch(()=>{});
+        await interaction.reply({ content: '✅ Verification successful! You now have access to the server.', ephemeral: true });
+      } else {
+        await interaction.reply({ content: '⚠️ Could not find the assigned member role.', ephemeral: true });
+      }
+      return;
+    }
+
     const member  = interaction.member;
     const voiceCh = member.voice?.channel;
     const data    = voiceCh ? tempChannels.get(voiceCh.id) : null;
@@ -757,4 +1326,14 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-client.login(process.env.DISCORD_TOKEN);
+const startApiServer = require('./api/server');
+
+client.login(process.env.DISCORD_TOKEN).then(() => {
+  if (process.env.EXPRESS_PORT || process.env.OAUTH2_CLIENT_SECRET) {
+    try {
+      startApiServer(client);
+    } catch (e) {
+      console.error('Failed to start API Server:', e);
+    }
+  }
+});
