@@ -5,8 +5,7 @@ const {
   StringSelectMenuBuilder
 } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
-const ytdl = require('@distube/ytdl-core');
-const yts = require('yt-search');
+const play = require('play-dl');
 const mongoose = require('mongoose');
 const discordTranscripts = require('discord-html-transcripts');
 const Ticket = require('./models/Ticket');
@@ -185,6 +184,9 @@ client.once(Events.ClientReady, async () => {
       }
     } catch (e) {}
   }, 60000); // Check every minute
+  
+  // Initialize play-dl SoundCloud client
+  play.getFreeClientID().then(cid => play.setToken({ soundcloud : { client_id : cid } })).catch(e => console.error('SC Token Error:', e));
   
   // Music logic uses native play-dl and @discordjs/voice
 });
@@ -842,31 +844,26 @@ client.on('interactionCreate', async (interaction) => {
 
        await interaction.deferReply();
        
-       let url = query;
+       let trackInfo;
        try {
-           if (!query.startsWith('http')) {
-               const r = await yts(query);
-               if (!r || !r.videos.length) return interaction.editReply({ content: '❌ Track not found.' });
-               url = r.videos[0].url;
+           if (query.startsWith('http')) {
+               trackInfo = await play.soundcloud(query);
+               if (!trackInfo) return interaction.editReply({ content: '❌ Track not found.' });
+           } else {
+               const r = await play.search(query, { source: { soundcloud: 'tracks' }, limit: 1 });
+               if (!r || !r.length) return interaction.editReply({ content: '❌ Track not found.' });
+               trackInfo = r[0];
            }
        } catch (err) {
-           console.error('yt-search Error:', err);
+           console.error('play-dl SC Error:', err);
            return interaction.editReply({ content: '❌ Error finding the track.' });
-       }
-
-       let videoInfo;
-       try {
-           videoInfo = await ytdl.getInfo(url);
-       } catch (err) {
-           console.error('ytdl-core Error:', err);
-           return interaction.editReply({ content: '❌ Error finding the track details.' });
        }
        
        const track = {
-           title: videoInfo.videoDetails.title,
-           url: videoInfo.videoDetails.video_url,
-           author: videoInfo.videoDetails.author?.name || 'Unknown',
-           duration: videoInfo.videoDetails.lengthSeconds
+           title: trackInfo.name,
+           url: trackInfo.url,
+           author: trackInfo.user?.name || 'Unknown',
+           duration: trackInfo.durationInSec
        };
 
        let queue = musicQueues.get(interaction.guild.id);
@@ -893,8 +890,8 @@ client.on('interactionCreate', async (interaction) => {
                    if (queue.tracks.length > 0) {
                        queue.current = queue.tracks.shift();
                        try {
-                           const stream = ytdl(queue.current.url, { filter: 'audioonly', quality: 'highestaudio', highWaterMark: 1 << 25 });
-                           const resource = createAudioResource(stream);
+                           const stream = await play.stream(queue.current.url);
+                           const resource = createAudioResource(stream.stream, { inputType: stream.type });
                            queue.player.play(resource);
                            if (queue.channel) queue.channel.send(`🎶 Now playing: **${queue.current.title}**`);
                        } catch (err) {
@@ -924,8 +921,8 @@ client.on('interactionCreate', async (interaction) => {
        if (!queue.current) {
            queue.current = track;
            try {
-               const stream = ytdl(track.url, { filter: 'audioonly', quality: 'highestaudio', highWaterMark: 1 << 25 });
-               const resource = createAudioResource(stream);
+               const stream = await play.stream(track.url);
+               const resource = createAudioResource(stream.stream, { inputType: stream.type });
                queue.player.play(resource);
                return interaction.editReply(`🎶 Now playing: **${track.title}**`);
            } catch (err) {
