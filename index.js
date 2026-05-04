@@ -849,7 +849,7 @@ client.on('interactionCreate', async (interaction) => {
        if (!voiceChannel) return interaction.reply({ content: '❌ You need to be in a voice channel!', ephemeral: true });
 
        if (!client.shoukaku) return interaction.reply({ content: '❌ Audio system is not configured.', ephemeral: true });
-       const node = client.shoukaku.options.nodeResolver(client.shoukaku.nodes);
+       const node = client.shoukaku.getNode();
        if (!node) return interaction.reply({ content: '❌ Lavalink node is offline.', ephemeral: true });
 
        await interaction.deferReply();
