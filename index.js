@@ -11,6 +11,7 @@ const Ticket = require('./models/Ticket');
 const SecretChannel = require('./models/SecretChannel');
 const Economy = require('./models/Economy');
 const PhishingCache = require('./models/PhishingCache');
+const AltTracker = require('./models/AltTracker');
 const axios = require('axios');
 
 if (process.env.MONGO_URI) {
