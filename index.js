@@ -5,8 +5,8 @@ const {
   StringSelectMenuBuilder
 } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
-const play = require('play-dl');
 const ytdl = require('@distube/ytdl-core');
+const yts = require('yt-search');
 const mongoose = require('mongoose');
 const discordTranscripts = require('discord-html-transcripts');
 const Ticket = require('./models/Ticket');
@@ -842,27 +842,31 @@ client.on('interactionCreate', async (interaction) => {
 
        await interaction.deferReply();
        
-       let videoInfo;
+       let url = query;
        try {
-           if (query.startsWith('http')) {
-               videoInfo = await play.video_info(query);
-           } else {
-               const searchResults = await play.search(query, { limit: 1 });
-               if (!searchResults || searchResults.length === 0) return interaction.editReply({ content: '❌ Track not found.' });
-               videoInfo = await play.video_info(searchResults[0].url);
+           if (!query.startsWith('http')) {
+               const r = await yts(query);
+               if (!r || !r.videos.length) return interaction.editReply({ content: '❌ Track not found.' });
+               url = r.videos[0].url;
            }
        } catch (err) {
-           console.error('Play-dl Error:', err);
+           console.error('yt-search Error:', err);
            return interaction.editReply({ content: '❌ Error finding the track.' });
        }
-       
-       if (!videoInfo || !videoInfo.video_details) return interaction.editReply({ content: '❌ Track not found.' });
+
+       let videoInfo;
+       try {
+           videoInfo = await ytdl.getInfo(url);
+       } catch (err) {
+           console.error('ytdl-core Error:', err);
+           return interaction.editReply({ content: '❌ Error finding the track details.' });
+       }
        
        const track = {
-           title: videoInfo.video_details.title,
-           url: videoInfo.video_details.url,
-           author: videoInfo.video_details.channel?.name || 'Unknown',
-           duration: videoInfo.video_details.durationRaw
+           title: videoInfo.videoDetails.title,
+           url: videoInfo.videoDetails.video_url,
+           author: videoInfo.videoDetails.author?.name || 'Unknown',
+           duration: videoInfo.videoDetails.lengthSeconds
        };
 
        let queue = musicQueues.get(interaction.guild.id);
