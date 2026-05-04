@@ -8,15 +8,18 @@
     "deploy": "node deploy-commands.js"
   },
   "dependencies": {
+    "@discordjs/voice": "^0.19.2",
     "axios": "^1.16.0",
     "discord-html-transcripts": "^3.2.0",
     "discord.js": "^14.15.3",
     "dotenv": "^16.4.5",
     "express": "^4.18.2",
     "express-session": "^1.17.3",
+    "ffmpeg-static": "^5.3.0",
+    "libsodium-wrappers": "^0.8.4",
     "mongoose": "^9.6.1",
     "passport": "^0.6.0",
     "passport-discord": "^0.1.4",
-    "shoukaku": "^3.4.2"
+    "play-dl": "^1.9.7"
   }
 }

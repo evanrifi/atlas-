@@ -4,7 +4,8 @@ const {
   ModalBuilder, TextInputBuilder, TextInputStyle, AuditLogEvent,
   StringSelectMenuBuilder
 } = require('discord.js');
-const { Shoukaku, Connectors } = require('shoukaku');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
+const play = require('play-dl');
 const mongoose = require('mongoose');
 const discordTranscripts = require('discord-html-transcripts');
 const Ticket = require('./models/Ticket');
@@ -184,18 +185,7 @@ client.once(Events.ClientReady, async () => {
     } catch (e) {}
   }, 60000); // Check every minute
   
-  if (process.env.LAVALINK_HOST) {
-     const lavPort = process.env.LAVALINK_PORT || '2333';
-     const Nodes = [{
-         name: 'AtlasNode',
-         url: `${process.env.LAVALINK_HOST}:${lavPort}`,
-         auth: process.env.LAVALINK_PASSWORD || 'youshallnotpass',
-         secure: lavPort === '443'
-     }];
-     client.shoukaku = new Shoukaku(new Connectors.DiscordJS(client), Nodes);
-     client.shoukaku.on('error', (_, error) => console.error('Lavalink Error:', error));
-     client.shoukaku.on('ready', (name) => console.log(`✦ Lavalink Node ${name} is now connected.`));
-  }
+  // Music logic uses native play-dl and @discordjs/voice
 });
 
 // ─── WELCOME & ANTI-RAID ───────────────────────────────────────────────
@@ -849,111 +839,119 @@ client.on('interactionCreate', async (interaction) => {
        const voiceChannel = interaction.member.voice.channel;
        if (!voiceChannel) return interaction.reply({ content: '❌ You need to be in a voice channel!', ephemeral: true });
 
-       if (!client.shoukaku) return interaction.reply({ content: '❌ Audio system is not configured.', ephemeral: true });
-       const node = client.shoukaku.getNode();
-       if (!node) return interaction.reply({ content: '❌ Lavalink node is offline.', ephemeral: true });
-
        await interaction.deferReply();
        
-       let search = query;
-       if (!search.startsWith('http')) search = `ytsearch:${query}`;
-
-       let result;
+       let videoInfo;
        try {
-           result = await node.rest.resolve(search);
-       } catch (error) {
-           console.error('Lavalink Resolve Error:', error);
-           return interaction.editReply({ content: '❌ Lavalink error: Could not fetch the track. Check the bot console for details.' });
+           if (query.startsWith('http')) {
+               videoInfo = await play.video_info(query);
+           } else {
+               const searchResults = await play.search(query, { limit: 1 });
+               if (!searchResults || searchResults.length === 0) return interaction.editReply({ content: '❌ Track not found.' });
+               videoInfo = await play.video_info(searchResults[0].url);
+           }
+       } catch (err) {
+           console.error('Play-dl Error:', err);
+           return interaction.editReply({ content: '❌ Error finding the track.' });
        }
        
-       if (!result || !result.data) {
-           return interaction.editReply({ content: '❌ Track not found.' });
-       }
-
-       let tracks = [];
-       if (result.data.tracks && result.data.tracks.length > 0) {
-           tracks = result.data.tracks;
-       } else if (result.data.info) {
-           tracks = [result.data]; // Single track
-       } else if (result.tracks && result.tracks.length > 0) {
-           tracks = result.tracks; // older lavalink format
-       }
-
-       if (tracks.length === 0) return interaction.editReply({ content: '❌ Track not found.' });
+       if (!videoInfo || !videoInfo.video_details) return interaction.editReply({ content: '❌ Track not found.' });
        
-       const track = tracks[0];
-       const trackEncoded = track.encoded || track.track; // support both structures
+       const track = {
+           title: videoInfo.video_details.title,
+           url: videoInfo.video_details.url,
+           author: videoInfo.video_details.channel?.name || 'Unknown',
+           duration: videoInfo.video_details.durationRaw
+       };
 
-       let player = client.shoukaku.players.get(interaction.guild.id);
        let queue = musicQueues.get(interaction.guild.id);
 
-       if (!player) {
+       if (!queue) {
+           queue = { 
+               tracks: [], 
+               current: null, 
+               channel: interaction.channel,
+               connection: null,
+               player: createAudioPlayer()
+           };
+           musicQueues.set(interaction.guild.id, queue);
+
            try {
-               player = await client.shoukaku.joinVoiceChannel({
-                   guildId: interaction.guild.id,
+               queue.connection = joinVoiceChannel({
                    channelId: voiceChannel.id,
-                   shardId: 0
+                   guildId: interaction.guild.id,
+                   adapterCreator: interaction.guild.voiceAdapterCreator,
+               });
+               queue.connection.subscribe(queue.player);
+
+               queue.player.on(AudioPlayerStatus.Idle, async () => {
+                   if (queue.tracks.length > 0) {
+                       queue.current = queue.tracks.shift();
+                       try {
+                           const stream = await play.stream(queue.current.url);
+                           const resource = createAudioResource(stream.stream, { inputType: stream.type });
+                           queue.player.play(resource);
+                           if (queue.channel) queue.channel.send(`🎶 Now playing: **${queue.current.title}**`);
+                       } catch (err) {
+                           console.error('Playback Error:', err);
+                           if (queue.channel) queue.channel.send('❌ Failed to play next track.');
+                           queue.player.stop();
+                       }
+                   } else {
+                       queue.connection.destroy();
+                       musicQueues.delete(interaction.guild.id);
+                   }
+               });
+               
+               queue.player.on('error', error => {
+                   console.error('Audio Player Error:', error);
+                   if (queue.channel) queue.channel.send('❌ An error occurred while playing audio.');
+                   queue.connection.destroy();
+                   musicQueues.delete(interaction.guild.id);
                });
            } catch (e) {
+               console.error('Voice Connection Error:', e);
+               musicQueues.delete(interaction.guild.id);
                return interaction.editReply({ content: '❌ Could not join your voice channel.' });
            }
-           
-           queue = { tracks: [], current: null, channel: interaction.channel };
-           musicQueues.set(interaction.guild.id, queue);
-
-           player.on('end', async (data) => {
-               if (data.reason === 'REPLACED') return;
-               const q = musicQueues.get(interaction.guild.id);
-               if (q && q.tracks.length > 0) {
-                   q.current = q.tracks.shift();
-                   const enc = q.current.encoded || q.current.track;
-                   await player.playTrack({ track: enc });
-                   if (q.channel) q.channel.send(`🎶 Now playing: **${q.current.info.title}**`);
-               } else {
-                   musicQueues.delete(interaction.guild.id);
-                   await client.shoukaku.leaveVoiceChannel(interaction.guild.id);
-               }
-           });
-           
-           player.on('closed', () => {
-               musicQueues.delete(interaction.guild.id);
-               client.shoukaku.leaveVoiceChannel(interaction.guild.id).catch(()=>{});
-           });
-       }
-
-       if (!queue) {
-           queue = { tracks: [], current: null, channel: interaction.channel };
-           musicQueues.set(interaction.guild.id, queue);
        }
 
        if (!queue.current) {
            queue.current = track;
-           await player.playTrack({ track: trackEncoded });
-           return interaction.editReply(`🎶 Now playing: **${track.info.title}**`);
+           try {
+               const stream = await play.stream(track.url);
+               const resource = createAudioResource(stream.stream, { inputType: stream.type });
+               queue.player.play(resource);
+               return interaction.editReply(`🎶 Now playing: **${track.title}**`);
+           } catch (err) {
+               console.error('Playback Error:', err);
+               queue.current = null;
+               return interaction.editReply({ content: '❌ Failed to play track.' });
+           }
        } else {
            queue.tracks.push(track);
-           return interaction.editReply(`📝 Added to queue: **${track.info.title}**`);
+           return interaction.editReply(`📝 Added to queue: **${track.title}**`);
        }
     }
 
     if (commandName === 'skip') {
-       const player = client.shoukaku?.players.get(interaction.guild.id);
-       if (!player) return interaction.reply({ content: '❌ Nothing is playing.', ephemeral: true });
-       await player.stopTrack();
+       const queue = musicQueues.get(interaction.guild.id);
+       if (!queue || !queue.current) return interaction.reply({ content: '❌ Nothing is playing.', ephemeral: true });
+       queue.player.stop();
        return interaction.reply('⏭️ Skipped.');
     }
 
     if (commandName === 'pause') {
-       const player = client.shoukaku?.players.get(interaction.guild.id);
-       if (!player) return interaction.reply({ content: '❌ Nothing is playing.', ephemeral: true });
-       await player.setPaused(true);
+       const queue = musicQueues.get(interaction.guild.id);
+       if (!queue || !queue.current) return interaction.reply({ content: '❌ Nothing is playing.', ephemeral: true });
+       queue.player.pause();
        return interaction.reply('⏸️ Paused.');
     }
 
     if (commandName === 'resume') {
-       const player = client.shoukaku?.players.get(interaction.guild.id);
-       if (!player) return interaction.reply({ content: '❌ Nothing is playing.', ephemeral: true });
-       await player.setPaused(false);
+       const queue = musicQueues.get(interaction.guild.id);
+       if (!queue || !queue.current) return interaction.reply({ content: '❌ Nothing is playing.', ephemeral: true });
+       queue.player.unpause();
        return interaction.reply('▶️ Resumed.');
     }
 
@@ -963,11 +961,11 @@ client.on('interactionCreate', async (interaction) => {
            return interaction.reply({ content: '❌ Queue is empty.', ephemeral: true });
        }
        
-       let qStr = `**Now Playing:** ${queue.current.info.title}\n\n**Up Next:**\n`;
+       let qStr = `**Now Playing:** ${queue.current.title}\n\n**Up Next:**\n`;
        if (queue.tracks.length === 0) {
            qStr += '*No more tracks in queue.*';
        } else {
-           qStr += queue.tracks.slice(0, 10).map((t, i) => `**${i+1}.** ${t.info.title}`).join('\n');
+           qStr += queue.tracks.slice(0, 10).map((t, i) => `**${i+1}.** ${t.title}`).join('\n');
            if (queue.tracks.length > 10) qStr += `\n*...and ${queue.tracks.length - 10} more.*`;
        }
        
@@ -982,17 +980,18 @@ client.on('interactionCreate', async (interaction) => {
        const embed = new EmbedBuilder()
            .setColor(CYAN)
            .setTitle('🎶 Now Playing')
-           .setDescription(`**[${queue.current.info.title}](${queue.current.info.uri || '#'})**\nAuthor: ${queue.current.info.author}`);
+           .setDescription(`**[${queue.current.title}](${queue.current.url || '#'})**\nAuthor: ${queue.current.author}`);
        return interaction.reply({ embeds: [embed] });
     }
 
     if (commandName === 'stop') {
-       if (!client.shoukaku) return interaction.reply({ content: '❌ Audio system is not configured.', ephemeral: true });
-       const player = client.shoukaku.players.get(interaction.guild.id);
-       if (!player) return interaction.reply({ content: '❌ Nothing is playing.', ephemeral: true });
+       const queue = musicQueues.get(interaction.guild.id);
+       if (!queue) return interaction.reply({ content: '❌ Nothing is playing.', ephemeral: true });
        
+       queue.tracks = [];
+       queue.player.stop();
+       if (queue.connection) queue.connection.destroy();
        musicQueues.delete(interaction.guild.id);
-       await client.shoukaku.leaveVoiceChannel(interaction.guild.id);
        return interaction.reply('🛑 Audio stopped and disconnected.');
     }
 
