@@ -11,3 +11,5 @@ pnpm-debug.log*
 xp-data.json
 warn-data.json
 banned-words-*.json
+Lavalink.jar
+application.yml
