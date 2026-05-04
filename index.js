@@ -6,6 +6,7 @@ const {
 } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
 const play = require('play-dl');
+const ytdl = require('@distube/ytdl-core');
 const mongoose = require('mongoose');
 const discordTranscripts = require('discord-html-transcripts');
 const Ticket = require('./models/Ticket');
@@ -888,8 +889,8 @@ client.on('interactionCreate', async (interaction) => {
                    if (queue.tracks.length > 0) {
                        queue.current = queue.tracks.shift();
                        try {
-                           const stream = await play.stream(queue.current.url);
-                           const resource = createAudioResource(stream.stream, { inputType: stream.type });
+                           const stream = ytdl(queue.current.url, { filter: 'audioonly', quality: 'highestaudio', highWaterMark: 1 << 25 });
+                           const resource = createAudioResource(stream);
                            queue.player.play(resource);
                            if (queue.channel) queue.channel.send(`🎶 Now playing: **${queue.current.title}**`);
                        } catch (err) {
@@ -919,8 +920,8 @@ client.on('interactionCreate', async (interaction) => {
        if (!queue.current) {
            queue.current = track;
            try {
-               const stream = await play.stream(track.url);
-               const resource = createAudioResource(stream.stream, { inputType: stream.type });
+               const stream = ytdl(track.url, { filter: 'audioonly', quality: 'highestaudio', highWaterMark: 1 << 25 });
+               const resource = createAudioResource(stream);
                queue.player.play(resource);
                return interaction.editReply(`🎶 Now playing: **${track.title}**`);
            } catch (err) {
