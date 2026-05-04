@@ -184,10 +184,12 @@ client.once(Events.ClientReady, async () => {
   }, 60000); // Check every minute
   
   if (process.env.LAVALINK_HOST) {
+     const lavPort = process.env.LAVALINK_PORT || '2333';
      const Nodes = [{
          name: 'AtlasNode',
-         url: `${process.env.LAVALINK_HOST}:${process.env.LAVALINK_PORT || '2333'}`,
-         auth: process.env.LAVALINK_PASSWORD || 'youshallnotpass'
+         url: `${process.env.LAVALINK_HOST}:${lavPort}`,
+         auth: process.env.LAVALINK_PASSWORD || 'youshallnotpass',
+         secure: lavPort === '443'
      }];
      client.shoukaku = new Shoukaku(new Connectors.DiscordJS(client), Nodes);
      client.shoukaku.on('error', (_, error) => console.error('Lavalink Error:', error));
@@ -855,7 +857,14 @@ client.on('interactionCreate', async (interaction) => {
        let search = query;
        if (!search.startsWith('http')) search = `ytsearch:${query}`;
 
-       const result = await node.rest.resolve(search);
+       let result;
+       try {
+           result = await node.rest.resolve(search);
+       } catch (error) {
+           console.error('Lavalink Resolve Error:', error);
+           return interaction.editReply({ content: '❌ Lavalink error: Could not fetch the track. Check the bot console for details.' });
+       }
+       
        if (!result || !result.data) {
            return interaction.editReply({ content: '❌ Track not found.' });
        }
