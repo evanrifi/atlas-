@@ -845,8 +845,8 @@ client.on('interactionCreate', async (interaction) => {
    function generateMusicPanel(queue) {
        if (!queue || !queue.current) return null;
        const embed = new EmbedBuilder()
-           .setColor(0x1dc9d8)
-           .setAuthor({ name: '◈ ATLAS ULTIMATE · Music Player' })
+           .setColor(0x00E5FF)
+           .setAuthor({ name: 'ATLAS UNIT · AUDIO ENGINE', iconURL: 'https://i.imgur.com/8Qj8X8w.png' })
            .setTitle(queue.current.title)
            .setURL(queue.current.url)
            .setThumbnail(queue.current.thumbnail || 'https://i.imgur.com/8Qj8X8w.png')
@@ -855,14 +855,14 @@ client.on('interactionCreate', async (interaction) => {
                { name: 'Duration', value: String(queue.current.duration || '0:00') + 's', inline: true },
                { name: 'Up Next', value: queue.tracks.length > 0 ? queue.tracks[0].title : 'None', inline: true }
            )
-           .setFooter({ text: `Tracks in queue: ${queue.tracks.length} | Powered by SoundCloud` });
+           .setFooter({ text: `SYSTEM QUEUE: ${queue.tracks.length} TRACKS` });
 
        const row = new ActionRowBuilder().addComponents(
-           new ButtonBuilder().setCustomId('music_pause').setEmoji('⏸️').setStyle(ButtonStyle.Secondary),
-           new ButtonBuilder().setCustomId('music_resume').setEmoji('▶️').setStyle(ButtonStyle.Secondary),
-           new ButtonBuilder().setCustomId('music_skip').setEmoji('⏭️').setStyle(ButtonStyle.Secondary),
-           new ButtonBuilder().setCustomId('music_stop').setEmoji('🛑').setStyle(ButtonStyle.Danger),
-           new ButtonBuilder().setCustomId('music_queue').setEmoji('📜').setStyle(ButtonStyle.Primary)
+           new ButtonBuilder().setCustomId('music_pause').setLabel('❚❚').setStyle(ButtonStyle.Secondary),
+           new ButtonBuilder().setCustomId('music_resume').setLabel('►').setStyle(ButtonStyle.Secondary),
+           new ButtonBuilder().setCustomId('music_skip').setLabel('►►').setStyle(ButtonStyle.Secondary),
+           new ButtonBuilder().setCustomId('music_stop').setLabel('■').setStyle(ButtonStyle.Secondary),
+           new ButtonBuilder().setCustomId('music_queue').setLabel('▤').setStyle(ButtonStyle.Secondary)
        );
 
        return { embeds: [embed], components: [row] };
