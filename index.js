@@ -23,7 +23,13 @@ if (process.env.MONGO_URI) {
 }
 require('dotenv').config();
 
-const {
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+let genAI = null;
+let aiModel = null;
+if (process.env.GEMINI_API_KEY) {
+  genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  aiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash", systemInstruction: "You are Atlas Unit, a highly intelligent and professional AI assistant for the Atlas Unit Discord server. Keep your responses concise, helpful, and use markdown styling. Maintain a sleek, professional tone." });
+}\n\nconst {
   loadDB, saveDB, getUser,
   getLevelFromXP, assignRoles,
   levelUpEmbed, rankEmbed, leaderboardEmbed,
@@ -361,6 +367,23 @@ client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   if (!message.guild)     return;
   if (!message.member)   return;
+
+  // ── AI ASSISTANT (MENTION) ──
+  if (message.mentions.has(client.user) && !message.mentions.everyone && !message.reference && aiModel) {
+      try {
+          message.channel.sendTyping();
+          const cleanContent = message.content.replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '').trim();
+          if (cleanContent) {
+              const result = await aiModel.generateContent(cleanContent);
+              let text = result.response.text();
+              if (text.length > 2000) text = text.substring(0, 1997) + '...';
+              await message.reply(text);
+              return; // Do not process automod/XP for AI queries
+          }
+      } catch (err) {
+          console.error('AI Mention Error:', err);
+      }
+  }
 
   const member  = message.member;
   const content = message.content.toLowerCase();
@@ -1101,6 +1124,21 @@ client.on('interactionCreate', async (interaction) => {
        if (queue.connection) queue.connection.destroy();
        musicQueues.delete(interaction.guild.id);
        return interaction.reply('🛑 Audio stopped and disconnected.');
+    }
+
+    if (commandName === 'ask') {
+       await interaction.deferReply();
+       if (!aiModel) return interaction.editReply('❌ AI Assistant is not configured (Missing GEMINI_API_KEY).');
+       try {
+           const prompt = interaction.options.getString('prompt');
+           const result = await aiModel.generateContent(prompt);
+           let text = result.response.text();
+           if (text.length > 2000) text = text.substring(0, 1997) + '...';
+           return interaction.editReply(text);
+       } catch (err) {
+           console.error('AI Error:', err);
+           return interaction.editReply('❌ I am having trouble processing that right now.');
+       }
     }
 
     if (commandName === 'alt-check') {

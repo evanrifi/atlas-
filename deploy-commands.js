@@ -268,7 +268,12 @@ const commands = [
     
   new SlashCommandBuilder()
     .setName('stop')
-    .setDescription('Stop the current music and disconnect the bot')
+    .setDescription('Stop the current music and disconnect the bot'),
+
+  new SlashCommandBuilder()
+    .setName('ask')
+    .setDescription('Ask the Atlas Unit AI assistant a question')
+    .addStringOption(opt => opt.setName('prompt').setDescription('Your question').setRequired(true))
 ].map(cmd => cmd.toJSON());
 
 (async () => {

@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@discordjs/voice": "^0.19.2",
+    "@google/generative-ai": "^0.24.1",
     "axios": "^1.16.0",
     "discord-html-transcripts": "^3.2.0",
     "discord.js": "^14.15.3",
@@ -22,6 +23,7 @@
     "passport": "^0.6.0",
     "passport-discord": "^0.1.4",
     "play-dl": "^1.9.7",
+    "youtube-ext": "^1.1.25",
     "yt-search": "^2.13.1"
   }
 }
