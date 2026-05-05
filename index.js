@@ -877,26 +877,32 @@ client.on('interactionCreate', async (interaction) => {
        
        let trackInfo;
        try {
-           let searchQuery = query;
-           
-           if (query.startsWith('http')) {
-               if (query.includes('youtube.com') || query.includes('youtu.be')) {
+           if (query.startsWith('http') && query.includes('soundcloud.com')) {
+               trackInfo = await play.soundcloud(query);
+               if (!trackInfo) return interaction.editReply({ content: '❌ Track not found.' });
+           } else {
+               let ytQuery = query;
+               // If YouTube link, extract Video ID for exact match
+               if (query.startsWith('http') && (query.includes('youtube.com') || query.includes('youtu.be'))) {
                    let videoId = '';
                    if (query.includes('youtu.be/')) videoId = query.split('youtu.be/')[1].split('?')[0];
                    else if (query.includes('v=')) videoId = query.split('v=')[1].split('&')[0];
-                   
-                   if (videoId) {
-                       const ytVid = await yts({ videoId });
-                       if (ytVid && ytVid.title) searchQuery = ytVid.title; 
-                   }
-               } else if (query.includes('soundcloud.com')) {
-                   trackInfo = await play.soundcloud(query);
-                   if (!trackInfo) return interaction.editReply({ content: '❌ Track not found.' });
+                   if (videoId) ytQuery = { videoId };
                }
-           }
-           
-           if (!trackInfo) {
-               const r = await play.search(searchQuery, { source: { soundcloud: 'tracks' }, limit: 1 });
+
+               // Bridge YouTube's highly accurate search to SoundCloud
+               const ytRes = await yts(ytQuery);
+               const ytVid = ytRes?.videos ? ytRes.videos[0] : ytRes;
+
+               let scSearchQuery = query;
+               if (ytVid && ytVid.title) {
+                   // Clean up (Official Video), etc., and append artist name to force exact SC match
+                   const cleanTitle = ytVid.title.replace(/[\(\[].*?[\)\]]/g, '').trim();
+                   const cleanAuthor = ytVid.author?.name ? ytVid.author.name.replace(/VEVO|Topic/gi, '').trim() : '';
+                   scSearchQuery = `${cleanTitle} ${cleanAuthor}`.trim();
+               }
+
+               const r = await play.search(scSearchQuery, { source: { soundcloud: 'tracks' }, limit: 1 });
                if (!r || !r.length) return interaction.editReply({ content: '❌ Track not found.' });
                trackInfo = r[0];
            }
