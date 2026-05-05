@@ -29,7 +29,9 @@ let aiModel = null;
 if (process.env.GEMINI_API_KEY) {
   genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   aiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash", systemInstruction: "You are Atlas Unit, a highly intelligent and professional AI assistant for the Atlas Unit Discord server. Keep your responses concise, helpful, and use markdown styling. Maintain a sleek, professional tone." });
-}\n\nconst {
+}
+
+const {
   loadDB, saveDB, getUser,
   getLevelFromXP, assignRoles,
   levelUpEmbed, rankEmbed, leaderboardEmbed,
