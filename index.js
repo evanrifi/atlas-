@@ -992,12 +992,14 @@ client.on('interactionCreate', async (interaction) => {
                    if (queue.tracks.length > 0) {
                        queue.current = queue.tracks.shift();
                        try {
+                           const cid = await play.getFreeClientID();
+                           await play.setToken({ soundcloud : { client_id : cid } });
                            const stream = await play.stream(queue.current.url);
                            const resource = createAudioResource(stream.stream, { inputType: stream.type });
                            queue.player.play(resource);
                            if (queue.channel) { const panel = generateMusicPanel(queue); if (queue.panelMessage) queue.panelMessage.delete().catch(()=>{}); queue.channel.send(panel).then(m => queue.panelMessage = m).catch(()=>{}); }
                        } catch (err) {
-                           console.error('Playback Error:', err);
+                           console.error('Playback Error:', err.message);
                            if (queue.channel) queue.channel.send('❌ Failed to play next track.');
                            queue.player.stop();
                        }
@@ -1023,8 +1025,10 @@ client.on('interactionCreate', async (interaction) => {
        if (!queue.current) {
            queue.current = track;
            try {
-               const stream = await play.stream(track.url);
-               const resource = createAudioResource(stream.stream, { inputType: stream.type });
+                const cid = await play.getFreeClientID();
+                await play.setToken({ soundcloud : { client_id : cid } });
+                const stream = await play.stream(track.url);
+                const resource = createAudioResource(stream.stream, { inputType: stream.type });
                queue.player.play(resource);
                const panel = generateMusicPanel(queue); const msg = await interaction.editReply(panel); queue.panelMessage = msg; return;
            } catch (err) {
