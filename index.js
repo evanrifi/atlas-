@@ -384,6 +384,7 @@ client.on('messageCreate', async (message) => {
           }
       } catch (err) {
           console.error('AI Mention Error:', err);
+          await message.reply(`❌ AI Error: \`${err.message}\``);
       }
   }
 
@@ -1139,7 +1140,7 @@ client.on('interactionCreate', async (interaction) => {
            return interaction.editReply(text);
        } catch (err) {
            console.error('AI Error:', err);
-           return interaction.editReply('❌ I am having trouble processing that right now.');
+           return interaction.editReply(`❌ I am having trouble processing that right now.\n\`\`\`${err.message}\`\`\``);
        }
     }
 
