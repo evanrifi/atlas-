@@ -892,11 +892,24 @@ client.on('interactionCreate', async (interaction) => {
 
                // Bridge YouTube's highly accurate search to SoundCloud
                let ytVid = null;
-               try {
-                   const ytRes = await yts(ytQuery);
-                   ytVid = ytRes?.videos ? ytRes.videos[0] : ytRes;
-               } catch (e) {
-                   console.error('yt-search error:', e);
+               if (query.startsWith('http') && (query.includes('youtube.com') || query.includes('youtu.be'))) {
+                   try {
+                       const ytRes = await yts(ytQuery);
+                       ytVid = ytRes?.videos ? ytRes.videos[0] : ytRes;
+                   } catch (e) { console.error('yts error:', e); }
+
+                   if (!ytVid) {
+                       try {
+                           const ytExt = require('youtube-ext');
+                           const info = await ytExt.videoInfo(query);
+                           if (info && info.title) ytVid = { title: info.title, author: { name: info.channel?.name || '' } };
+                       } catch (e) { console.error('yt-ext error:', e); }
+                   }
+               } else if (!query.startsWith('http')) {
+                   try {
+                       const ytRes = await yts(query);
+                       ytVid = ytRes?.videos ? ytRes.videos[0] : ytRes;
+                   } catch (e) { console.error('yts text error:', e); }
                }
 
                let scSearchQuery = query;
@@ -909,15 +922,14 @@ client.on('interactionCreate', async (interaction) => {
                    scSearchQuery = `${cleanTitle} ${cleanAuthor}`.trim();
                }
 
-               let r = [];
-               if (!query.startsWith('http') || ytVid) {
-                   r = await play.search(scSearchQuery, { source: { soundcloud: 'tracks' }, limit: 1 });
-                   if ((!r || !r.length) && cleanTitleFallback) {
-                       r = await play.search(cleanTitleFallback, { source: { soundcloud: 'tracks' }, limit: 1 });
-                   }
-                   if (!r || !r.length) {
-                       if (!query.startsWith('http')) r = await play.search(query, { source: { soundcloud: 'tracks' }, limit: 1 });
-                   }
+               let r = await play.search(scSearchQuery, { source: { soundcloud: 'tracks' }, limit: 1 });
+               
+               if ((!r || !r.length) && cleanTitleFallback) {
+                   r = await play.search(cleanTitleFallback, { source: { soundcloud: 'tracks' }, limit: 1 });
+               }
+
+               if (!r || !r.length) {
+                   if (!query.startsWith('http')) r = await play.search(query, { source: { soundcloud: 'tracks' }, limit: 1 });
                }
                
                if (!r || !r.length) return interaction.editReply({ content: '❌ Track not found.' });
