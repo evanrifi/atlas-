@@ -838,6 +838,36 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.reply({ content: `✅ Secret channel created: ${channel} (Destructs in ${minutes}m)`, ephemeral: true });
     }
 
+   // ==========================================
+   // 🎵 MUSIC SYSTEM (Native Voice + play-dl SC)
+   // ==========================================
+
+   function generateMusicPanel(queue) {
+       if (!queue || !queue.current) return null;
+       const embed = new EmbedBuilder()
+           .setColor(0x1dc9d8)
+           .setAuthor({ name: '◈ ATLAS ULTIMATE · Music Player' })
+           .setTitle(queue.current.title)
+           .setURL(queue.current.url)
+           .setThumbnail(queue.current.thumbnail || 'https://i.imgur.com/8Qj8X8w.png')
+           .addFields(
+               { name: 'Author', value: queue.current.author || 'Unknown', inline: true },
+               { name: 'Duration', value: String(queue.current.duration || '0:00') + 's', inline: true },
+               { name: 'Up Next', value: queue.tracks.length > 0 ? queue.tracks[0].title : 'None', inline: true }
+           )
+           .setFooter({ text: `Tracks in queue: ${queue.tracks.length} | Powered by SoundCloud` });
+
+       const row = new ActionRowBuilder().addComponents(
+           new ButtonBuilder().setCustomId('music_pause').setEmoji('⏸️').setStyle(ButtonStyle.Secondary),
+           new ButtonBuilder().setCustomId('music_resume').setEmoji('▶️').setStyle(ButtonStyle.Secondary),
+           new ButtonBuilder().setCustomId('music_skip').setEmoji('⏭️').setStyle(ButtonStyle.Secondary),
+           new ButtonBuilder().setCustomId('music_stop').setEmoji('🛑').setStyle(ButtonStyle.Danger),
+           new ButtonBuilder().setCustomId('music_queue').setEmoji('📜').setStyle(ButtonStyle.Primary)
+       );
+
+       return { embeds: [embed], components: [row] };
+   }
+
     if (commandName === 'play') {
        const query = interaction.options.getString('query');
        const voiceChannel = interaction.member.voice.channel;
@@ -879,7 +909,8 @@ client.on('interactionCreate', async (interaction) => {
            title: trackInfo.name,
            url: trackInfo.url,
            author: trackInfo.user?.name || 'Unknown',
-           duration: trackInfo.durationInSec
+           duration: trackInfo.durationInSec,
+           thumbnail: trackInfo.thumbnail
        };
 
        let queue = musicQueues.get(interaction.guild.id);
@@ -1306,6 +1337,43 @@ client.on('interactionCreate', async (interaction) => {
 
   // ── BUTTONS ────────────────────────────────────────────────────
   if (interaction.isButton()) {
+    if (interaction.customId.startsWith('music_')) {
+        const id = interaction.customId;
+        const queue = musicQueues.get(interaction.guild.id);
+        if (!queue) return interaction.reply({ content: '❌ No music is playing right now.', ephemeral: true });
+        
+        if (id === 'music_pause') {
+            queue.player.pause();
+            return interaction.reply({ content: '⏸️ Paused the music.', ephemeral: true });
+        }
+        if (id === 'music_resume') {
+            queue.player.unpause();
+            return interaction.reply({ content: '▶️ Resumed the music.', ephemeral: true });
+        }
+        if (id === 'music_skip') {
+            queue.player.stop(); // Emits Idle which plays next track
+            return interaction.reply({ content: '⏭️ Skipped to the next track.', ephemeral: true });
+        }
+        if (id === 'music_stop') {
+            queue.tracks = [];
+            queue.player.stop();
+            if (queue.connection) queue.connection.destroy();
+            musicQueues.delete(interaction.guild.id);
+            if (queue.panelMessage) queue.panelMessage.delete().catch(()=>{});
+            return interaction.reply({ content: '🛑 Stopped the music and cleared the queue.', ephemeral: true });
+        }
+        if (id === 'music_queue') {
+            let qStr = `**Now Playing:** ${queue.current.title}\n\n**Up Next:**\n`;
+            if (queue.tracks.length === 0) qStr += '*No more tracks in queue.*';
+            else {
+                qStr += queue.tracks.slice(0, 10).map((t, i) => `**${i+1}.** ${t.title}`).join('\n');
+                if (queue.tracks.length > 10) qStr += `\n*...and ${queue.tracks.length - 10} more.*`;
+            }
+            const embed = new EmbedBuilder().setColor(0x1dc9d8).setTitle('🎶 Music Queue').setDescription(qStr);
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+    }
+
     if (interaction.customId === 'close_ticket') {
       await interaction.reply('🔒 Closing ticket and generating transcript... This may take a few seconds.');
       const channel = interaction.channel;
