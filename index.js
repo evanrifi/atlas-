@@ -6,6 +6,7 @@ const {
 } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
 const play = require('play-dl');
+const yts = require('yt-search');
 const mongoose = require('mongoose');
 const discordTranscripts = require('discord-html-transcripts');
 const Ticket = require('./models/Ticket');
@@ -846,16 +847,31 @@ client.on('interactionCreate', async (interaction) => {
        
        let trackInfo;
        try {
+           let searchQuery = query;
+           
            if (query.startsWith('http')) {
-               trackInfo = await play.soundcloud(query);
-               if (!trackInfo) return interaction.editReply({ content: '❌ Track not found.' });
-           } else {
-               const r = await play.search(query, { source: { soundcloud: 'tracks' }, limit: 1 });
+               if (query.includes('youtube.com') || query.includes('youtu.be')) {
+                   let videoId = '';
+                   if (query.includes('youtu.be/')) videoId = query.split('youtu.be/')[1].split('?')[0];
+                   else if (query.includes('v=')) videoId = query.split('v=')[1].split('&')[0];
+                   
+                   if (videoId) {
+                       const ytVid = await yts({ videoId });
+                       if (ytVid && ytVid.title) searchQuery = ytVid.title; 
+                   }
+               } else if (query.includes('soundcloud.com')) {
+                   trackInfo = await play.soundcloud(query);
+                   if (!trackInfo) return interaction.editReply({ content: '❌ Track not found.' });
+               }
+           }
+           
+           if (!trackInfo) {
+               const r = await play.search(searchQuery, { source: { soundcloud: 'tracks' }, limit: 1 });
                if (!r || !r.length) return interaction.editReply({ content: '❌ Track not found.' });
                trackInfo = r[0];
            }
        } catch (err) {
-           console.error('play-dl SC Error:', err);
+           console.error('Search/Link Error:', err);
            return interaction.editReply({ content: '❌ Error finding the track.' });
        }
        
