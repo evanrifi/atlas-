@@ -894,22 +894,42 @@ client.on('interactionCreate', async (interaction) => {
                let ytVid = null;
                if (query.startsWith('http') && (query.includes('youtube.com') || query.includes('youtu.be'))) {
                    try {
-                       const ytRes = await yts(ytQuery);
-                       ytVid = ytRes?.videos ? ytRes.videos[0] : ytRes;
-                   } catch (e) { console.error('yts error:', e); }
+                       const info = await play.video_info(query);
+                       if (info && info.video_details) ytVid = { title: info.video_details.title, author: { name: info.video_details.channel?.name || '' } };
+                   } catch (e) { console.error('play.video_info error:', e.message); }
+
+                   if (!ytVid) {
+                       try {
+                           const ytRes = await yts(ytQuery);
+                           ytVid = ytRes?.videos ? ytRes.videos[0] : ytRes;
+                       } catch (e) { console.error('yts error:', e.message); }
+                   }
 
                    if (!ytVid) {
                        try {
                            const ytExt = require('youtube-ext');
                            const info = await ytExt.videoInfo(query);
                            if (info && info.title) ytVid = { title: info.title, author: { name: info.channel?.name || '' } };
-                       } catch (e) { console.error('yt-ext error:', e); }
+                       } catch (e) { console.error('yt-ext error:', e.message); }
                    }
                } else if (!query.startsWith('http')) {
                    try {
                        const ytRes = await yts(query);
                        ytVid = ytRes?.videos ? ytRes.videos[0] : ytRes;
-                   } catch (e) { console.error('yts text error:', e); }
+                   } catch (e) { console.error('yts text error:', e.message); }
+               }
+
+               // ULTIMATE FALLBACK: If ytVid is still null and it's a URL (like Spotify, Apple Music, etc.)
+               if (!ytVid && query.startsWith('http')) {
+                   try {
+                       const axios = require('axios');
+                       const res = await axios.get(query, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
+                       const match = res.data.match(/<title.*?>(.*?)<\/title>/i);
+                       if (match && match[1]) {
+                           let title = match[1].replace(/ - song and lyrics by /gi, ' ').replace(/ \| Spotify/gi, '').replace(/ by .*? on Apple Music/gi, '').replace(/ - YouTube/gi, '').replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"');
+                           ytVid = { title: title.trim(), author: { name: '' } };
+                       }
+                   } catch (e) { console.error('Axios fallback error:', e.message); }
                }
 
                let scSearchQuery = query;
