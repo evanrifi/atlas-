@@ -940,7 +940,7 @@ client.on('interactionCreate', async (interaction) => {
                            const stream = await play.stream(queue.current.url);
                            const resource = createAudioResource(stream.stream, { inputType: stream.type });
                            queue.player.play(resource);
-                           if (queue.channel) queue.channel.send(`🎶 Now playing: **${queue.current.title}**`);
+                           if (queue.channel) { const panel = generateMusicPanel(queue); if (queue.panelMessage) queue.panelMessage.delete().catch(()=>{}); queue.channel.send(panel).then(m => queue.panelMessage = m).catch(()=>{}); }
                        } catch (err) {
                            console.error('Playback Error:', err);
                            if (queue.channel) queue.channel.send('❌ Failed to play next track.');
@@ -971,7 +971,7 @@ client.on('interactionCreate', async (interaction) => {
                const stream = await play.stream(track.url);
                const resource = createAudioResource(stream.stream, { inputType: stream.type });
                queue.player.play(resource);
-               return interaction.editReply(`🎶 Now playing: **${track.title}**`);
+               const panel = generateMusicPanel(queue); const msg = await interaction.editReply(panel); queue.panelMessage = msg; return;
            } catch (err) {
                console.error('Playback Error:', err);
                queue.current = null;
