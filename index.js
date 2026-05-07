@@ -28,7 +28,7 @@ let genAI = null;
 let aiModel = null;
 if (process.env.GEMINI_API_KEY) {
   genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  aiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  aiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 }
 
 const {
