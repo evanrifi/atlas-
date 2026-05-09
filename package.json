@@ -1,0 +1,20 @@
+{
+  "name": "atlas-",
+  "version": "1.0.0",
+  "description": "ATLAS ULTIMATE Discord Bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@discordjs/voice": "^0.18.0",
+    "@google/generative-ai": "^0.21.0",
+    "axios": "^1.7.0",
+    "discord-html-transcripts": "^3.2.0",
+    "discord.js": "^14.16.0",
+    "dotenv": "^16.4.0",
+    "mongoose": "^8.8.0",
+    "play-dl": "^1.9.7",
+    "yt-search": "^2.12.1"
+  }
+}
